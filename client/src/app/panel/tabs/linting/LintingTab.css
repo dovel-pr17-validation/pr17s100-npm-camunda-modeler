@@ -1,0 +1,70 @@
+:root {
+  --linting-tab-item-hover-background-color: var(--neutral-background-medium);
+}
+
+:local(.LintingTabItem) {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  cursor: default;
+
+  * {
+    user-select: text;
+  }
+
+  &:not(.linting-tab-item--empty):hover {
+    background-color: var(--linting-tab-item-hover-background-color);
+  }
+
+  .linting-tab-item__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    width: 200px;
+    padding: 6px 12px;
+    border-right: 1px solid var(--border);
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: inset var(--focus-shadow);
+    }
+
+    .linting-tab-item__label {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-weight: var(--font-weight-semibold);
+    }
+  }
+
+  .linting-tab-item__icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    color: var(--neutral-foreground-subtle);
+  }
+
+  .linting-tab-item__content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 6px 12px;
+  }
+
+  &.linting-tab-item--empty {
+    border-bottom: none;
+
+    .linting-tab-item__header {
+      width: auto;
+      border-right: none;
+
+      .linting-tab-item__label {
+        font-weight: var(--font-weight-normal);
+      }
+    }
+  }
+}

@@ -1,0 +1,79 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import React from 'react';
+
+import { Button } from '@camunda/design-system';
+
+import {
+  Section,
+} from '../../../shared/ui';
+
+import { getMessageForReason } from '../shared/util';
+import FormFeedback from '../../../shared/ui/form/FormFeedback';
+
+export default function DeploymentConfigForm(props) {
+  const {
+    connectionCheckResult,
+    hasLintErrors = false,
+    onSubmit,
+    renderDescription = null,
+    renderHeader = null,
+    renderSubmit = 'Submit',
+    isSubmitting = false,
+    handleChangeConnections,
+    handleManageConnections,
+    handleOpenLintingPanel
+  } = props;
+
+  return (
+    <div>
+      <Section>
+        { renderHeader && (
+          <Section.Header className="form-header">
+            { renderHeader }
+          </Section.Header>
+        )}
+        { renderDescription && (
+          <Section.Body className="form-description">
+            { renderDescription }
+          </Section.Body>
+        )}
+        <Section.Body className="form-body">
+          <Section.Actions>
+            <Button
+              type="submit"
+              disabled={ isSubmitting }
+              onClick={ () => onSubmit() }
+            >
+              { renderSubmit }
+            </Button>
+            { connectionCheckResult?.success === false && (
+              <FormFeedback
+                error={ <>
+                  Could not establish connection: <br />
+                  { getMessageForReason(connectionCheckResult?.reason) } <br />
+                  <a href="#" onClick={ handleChangeConnections }>Change</a> or <a href="#" onClick={ handleManageConnections }>manage connections.</a>
+                </> }
+              />
+            )}
+            { connectionCheckResult?.success !== false && hasLintErrors && (
+              <FormFeedback
+                error={ <>
+                  Diagram has errors. <a href="#" onClick={ handleOpenLintingPanel }>Show errors.</a>
+                </> }
+              />
+            )}
+          </Section.Actions>
+        </Section.Body>
+      </Section>
+    </div>
+  );
+}

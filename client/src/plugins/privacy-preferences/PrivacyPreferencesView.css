@@ -1,0 +1,36 @@
+:local(.View) {
+
+  p {
+    margin: 0;
+  }
+
+  .privacy-preferences {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .privacy-preference {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+
+    /* center on the 18px label line */
+    [data-slot="checkbox"] {
+      margin-top: 1px;
+    }
+  }
+
+  .privacy-preference__text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .privacy-preference__description {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--neutral-foreground-subtle);
+  }
+
+}

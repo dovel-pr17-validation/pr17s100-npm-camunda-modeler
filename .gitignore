@@ -1,0 +1,16 @@
+.DS_Store
+node_modules
+dist/
+app/public/
+app/preload/
+plugins/**
+.claude/worktrees
+.vscode
+coverage
+.nyc_output
+.linked-dependencies
+tmp
+test/e2e/test-results
+test/e2e/playwright-report
+tasks/tracked-dependencies.json
+.c8run

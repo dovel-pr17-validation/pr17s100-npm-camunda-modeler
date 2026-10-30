@@ -1,0 +1,147 @@
+:root {
+  --status-bar-background-color: var(--app-bar-background-color);
+  --status-bar-border-color: var(--app-bar-border-color);
+  --status-bar-font-color: var(--neutral-foreground-strong);
+  --status-bar-icon-font-color: var(--neutral-foreground-subtle);
+  --status-bar-focus-background-color: var(--app-bar-item-hover-background-color);
+  --status-bar-hover-background-color: var(--app-bar-item-hover-background-color);
+  --status-bar-active-background-color: var(--app-bar-item-active-background-color);
+  --status-bar-active-hover-background-color: var(--app-bar-item-active-background-color);
+  --status-bar-active-font-color: var(--neutral-foreground-strong);
+  --status-bar-active-icon-font-color: var(--neutral-foreground-strong);
+  --status-bar-font-size: var(--text-sm);
+  --status-bar-primary-background-color: var(--primary-action-default);
+  --status-bar-primary-hover-background-color: var(--primary-action-hover);
+  --status-bar-primary-active-background-color: var(--primary-action-active);
+  --status-bar-primary-font-color: var(--primary-action-foreground);
+  --status-bar-attention-background-color: var(--info-action-default);
+  --status-bar-attention-hover-background-color: var(--info-action-hover);
+  --status-bar-attention-active-background-color: var(--info-action-active);
+  --status-bar-attention-font-color: var(--info-action-foreground);
+
+  /* the same inset above, below, beside and between the items */
+  --status-bar-spacing: 4px;
+  --status-bar-item-height: 24px;
+}
+
+:local(.StatusBar) {
+  display: flex;
+  align-items: center;
+  gap: var(--status-bar-spacing);
+  flex: none;
+  z-index: 1000;
+  height: calc(var(--status-bar-item-height) + 2 * var(--status-bar-spacing) + 1px);
+  padding: 0 var(--status-bar-spacing);
+  white-space: nowrap;
+
+  background-color: var(--status-bar-background-color);
+  border-top: 1px solid var(--status-bar-border-color);
+  color: var(--status-bar-font-color);
+  font-size: var(--status-bar-font-size);
+
+  .status-bar__file {
+    flex: 1;
+  }
+
+  .status-bar__file,
+  .status-bar__app {
+    display: flex;
+    align-items: center;
+    gap: var(--status-bar-spacing);
+    min-width: 0;
+  }
+
+  /* flat items like IDE status bars: no border or fill until hovered, focused or open */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: var(--status-bar-item-height);
+    min-width: var(--status-bar-item-height);
+    padding: 0 8px;
+
+    border: none;
+    border-radius: var(--radius);
+
+    background-color: transparent;
+    color: inherit;
+    font-size: var(--status-bar-font-size);
+    font-weight: var(--font-weight-normal);
+    cursor: pointer;
+
+    svg:not([data-slot="status-icon"]) {
+      color: var(--status-bar-icon-font-color);
+    }
+
+    /* 24px glyphs with built-in padding */
+    .icon {
+      width: 20px;
+      height: 20px;
+    }
+
+    &:hover {
+      background-color: var(--status-bar-hover-background-color);
+    }
+
+    &.btn--active {
+      color: var(--status-bar-active-font-color);
+      background-color: var(--status-bar-active-background-color);
+
+      svg:not([data-slot="status-icon"]) {
+        color: var(--status-bar-active-icon-font-color);
+      }
+    }
+
+    &.btn--active:hover {
+      background-color: var(--status-bar-active-hover-background-color);
+    }
+
+    &:focus {
+      outline: none;
+    }
+
+    &:focus-visible {
+      box-shadow: var(--focus-shadow);
+    }
+  }
+
+  .btn--primary {
+    background-color: var(--status-bar-primary-background-color);
+    color: var(--status-bar-primary-font-color);
+
+    svg:not([data-slot="status-icon"]) {
+      color: var(--status-bar-primary-font-color);
+    }
+
+    &:hover {
+      background-color: var(--status-bar-primary-hover-background-color);
+    }
+
+    &.btn--active,
+    &.btn--active:hover {
+      background-color: var(--status-bar-primary-active-background-color);
+      color: var(--status-bar-primary-font-color);
+
+      svg:not([data-slot="status-icon"]) {
+        color: var(--status-bar-primary-font-color);
+      }
+    }
+  }
+
+  /* a nudge, not an action of the current file */
+  .btn--attention {
+    background-color: var(--status-bar-attention-background-color);
+    color: var(--status-bar-attention-font-color);
+
+    &:hover {
+      background-color: var(--status-bar-attention-hover-background-color);
+    }
+
+    &.btn--active,
+    &.btn--active:hover {
+      background-color: var(--status-bar-attention-active-background-color);
+      color: var(--status-bar-attention-font-color);
+    }
+  }
+}

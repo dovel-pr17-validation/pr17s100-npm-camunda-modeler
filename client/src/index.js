@@ -1,0 +1,92 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import '@camunda/design-system/styles.css';
+import './styles/style.css';
+
+import { flags, globals, metadata, plugins } from './globals';
+
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+
+import {
+  AppParent,
+  KeyboardBindings,
+  TabsProvider,
+} from './app';
+
+import Metadata from './util/Metadata';
+import Flags from './util/Flags';
+
+import debug from 'debug';
+import { migrateConnections } from './app/migrations/migrateConnections';
+
+// This fix is necessary because dragular expects `global` to be defined, see
+// https://github.com/bevacqua/dragula/issues/602 for context
+window.global = window;
+
+if (process.env.NODE_ENV !== 'production') {
+  debug.enable('*,-sockjs-client:*');
+}
+
+const STRICT_MODE_ENABLED = process.env.REACT_STRICT_MODE_DISABLED !== 'true';
+
+Metadata.init(metadata);
+Flags.init(flags);
+
+const keyboardBindings = new KeyboardBindings({
+  isMac: globals.isMac
+});
+
+
+
+
+async function render() {
+
+  // load plugins
+  plugins.bindHelpers(window);
+
+  await plugins.loadAll();
+
+  const rootElement = document.querySelector('#root');
+
+  const onStarted = () => {
+
+    // mark as finished loading
+    document.querySelector('body > .spinner-border').classList.add('hidden');
+
+    migrateConnections(globals.settings, globals.config);
+  };
+
+  const tabsProvider = new TabsProvider(plugins.get('tabs'), globals.settings);
+
+  const root = createRoot(rootElement);
+  root.render(
+    STRICT_MODE_ENABLED ? (
+      <React.StrictMode>
+        <AppParent
+          keyboardBindings={ keyboardBindings }
+          globals={ globals }
+          tabsProvider={ tabsProvider }
+          onStarted={ onStarted }
+        />
+      </React.StrictMode>
+    ) : (
+      <AppParent
+        keyboardBindings={ keyboardBindings }
+        globals={ globals }
+        tabsProvider={ tabsProvider }
+        onStarted={ onStarted }
+      />
+    ),
+  );
+}
+
+render();

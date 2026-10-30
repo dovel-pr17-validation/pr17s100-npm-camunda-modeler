@@ -1,0 +1,719 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+
+import React from 'react';
+
+import { render, fireEvent, act } from '@testing-library/react';
+
+import { merge } from 'min-dash';
+
+import StartInstanceConfigForm from '../StartInstanceConfigForm';
+
+import { TextInput } from '../../../../shared/ui';
+
+describe('<StartInstanceConfigForm>', function() {
+
+  it('should render', function() {
+
+    // when
+    const { container } = createStartInstanceConfigForm();
+
+    // then
+    expect(container.innerHTML).to.not.be.empty;
+  });
+
+
+  it('should render no header by default', function() {
+
+    // when
+    const { container } = createStartInstanceConfigForm();
+
+    // then
+    expect(container.querySelector('.section__header')).to.be.null;
+  });
+
+
+  it('should render custom header', function() {
+
+    // given
+    const renderHeader = 'Custom Header';
+
+    // when
+    const { container } = createStartInstanceConfigForm({
+      renderHeader
+    });
+
+    // then
+    expect(container.querySelector('.section__header')).to.not.be.null;
+  });
+
+
+  it('should render default submit button', function() {
+
+    // when
+    const { container } = createStartInstanceConfigForm();
+
+    // then
+    expect(container.querySelector('button[type="submit"]').textContent).to.eql('Submit');
+  });
+
+
+  it('should render custom submit button', function() {
+
+    // given
+    const renderSubmit = 'Custom Submit';
+
+    // when
+    const { container } = createStartInstanceConfigForm({
+      renderSubmit
+    });
+
+    // then
+    expect(container.querySelector('button[type="submit"]').textContent).to.eql(renderSubmit);
+  });
+
+
+  describe('fields', function() {
+
+    describe('variables', function() {
+
+      it('should render', function() {
+
+        // when
+        const { container } = createStartInstanceConfigForm();
+
+        // then
+        expect(container.querySelector('label[for="variables"]')).to.not.be.null;
+      });
+
+    });
+
+
+    describe('businessId', function() {
+
+      it('should render', function() {
+
+        // when
+        const { container } = createStartInstanceConfigForm();
+
+        // then
+        expect(container.querySelector('label[for="businessId"]')).to.not.be.null;
+      });
+
+
+      it('should be enabled when cluster version >= 8.9', function() {
+
+        // when
+        const { container } = createStartInstanceConfigForm({
+          connectionCheckResult: {
+            success: true,
+            response: {
+              gatewayVersion: '8.9.0'
+            }
+          }
+        });
+
+        // then
+        expect(container.querySelector('input[name="businessId"]').disabled).to.be.false;
+      });
+
+
+      it('should be enabled when cluster version < 8.9', function() {
+
+        // when
+        const { container } = createStartInstanceConfigForm({
+          connectionCheckResult: {
+            success: true,
+            response: {
+              gatewayVersion: '8.8.0'
+            }
+          }
+        });
+
+        // then
+        const businessIdInput = container.querySelector('input[name="businessId"]');
+        expect(businessIdInput.disabled).to.be.false;
+      });
+
+
+      it('should be enabled when no connection check result', function() {
+
+        // when
+        const { container } = createStartInstanceConfigForm();
+
+        // then
+        const businessIdInput = container.querySelector('input[name="businessId"]');
+        expect(businessIdInput.disabled).to.be.false;
+      });
+
+
+      it('should be enabled when connection check fails', function() {
+
+        // when
+        const { container } = createStartInstanceConfigForm({
+          connectionCheckResult: {
+            success: false,
+            reason: 'UNKNOWN'
+          }
+        });
+
+        // then
+        const businessIdInput = container.querySelector('input[name="businessId"]');
+        expect(businessIdInput.disabled).to.be.false;
+      });
+
+
+      it('should preserve businessId when connecting to unsupported cluster', async function() {
+
+        // given
+        const supportedCluster = {
+          success: true,
+          response: { gatewayVersion: '8.9.0' }
+        };
+
+        const unsupportedCluster = {
+          success: true,
+          response: { gatewayVersion: '8.8.0' }
+        };
+
+        const { container, rerender } = createStartInstanceConfigForm({
+          initialFieldValues: { businessId: 'my-id' },
+          connectionCheckResult: supportedCluster
+        });
+
+        // when
+        await act(async () => {
+          rerenderStartInstanceConfigForm(rerender, {
+            initialFieldValues: { businessId: 'my-id' },
+            connectionCheckResult: unsupportedCluster
+          });
+        });
+
+        // then
+        expect(container.querySelector('input[name="businessId"]').value).to.eql('my-id');
+      });
+
+
+      it('should show version hint when field has a value and cluster is unsupported', function() {
+
+        // when
+        const { container } = createStartInstanceConfigForm({
+          initialFieldValues: { businessId: 'my-id' },
+          connectionCheckResult: {
+            success: true,
+            response: { gatewayVersion: '8.8.0' }
+          }
+        });
+
+        // then
+        const businessIdInput = container.querySelector('input[name="businessId"]');
+        const description = getDescription(businessIdInput);
+        expect(description.textContent).to.include('Requires Camunda 8.9.0 or later');
+      });
+
+
+      it('should not show version hint when field is empty with unsupported cluster', function() {
+
+        // when
+        const { container } = createStartInstanceConfigForm({
+          connectionCheckResult: {
+            success: true,
+            response: { gatewayVersion: '8.8.0' }
+          }
+        });
+
+        // then
+        const businessIdInput = container.querySelector('input[name="businessId"]');
+        const description = getDescription(businessIdInput);
+        expect(description).to.be.null;
+      });
+
+
+      it('should show version hint after user types value on unsupported cluster', async function() {
+
+        // given
+        const { container } = createStartInstanceConfigForm({
+          connectionCheckResult: {
+            success: true,
+            response: { gatewayVersion: '8.8.0' }
+          }
+        });
+
+        // when
+        await act(async () => {
+          fireEvent.change(container.querySelector('input[name="businessId"]'), {
+            target: { name: 'businessId', value: 'order-123' }
+          });
+        });
+
+        // then
+        const businessIdInput = container.querySelector('input[name="businessId"]');
+        const description = getDescription(businessIdInput);
+        expect(description.textContent).to.include('Requires Camunda 8.9.0 or later');
+      });
+
+
+      it('should not show version hint when field is touched but empty on unsupported cluster', async function() {
+
+        // given
+        const { container } = createStartInstanceConfigForm({
+          connectionCheckResult: {
+            success: true,
+            response: { gatewayVersion: '8.8.0' }
+          }
+        });
+
+        // when
+        await act(async () => {
+          fireEvent.focus(container.querySelector('input[name="businessId"]'));
+        });
+
+        await act(async () => {
+          fireEvent.blur(container.querySelector('input[name="businessId"]'));
+        });
+
+        // then
+        const businessIdInput = container.querySelector('input[name="businessId"]');
+        const description = getDescription(businessIdInput);
+        expect(description).to.be.null;
+      });
+
+    });
+
+  });
+
+
+  describe('submission', function() {
+
+    it('should submit', async function() {
+
+      // given
+      const onSubmitSpy = sinon.spy();
+
+      const { container } = createStartInstanceConfigForm({
+        onSubmit: onSubmitSpy
+      });
+
+      // when
+      await act(async () => {
+        fireEvent.change(container.querySelector('textarea[name="variables"]'), {
+          target: { name: 'variables', value: '{ "foo": "bar" }' }
+        });
+      });
+
+      await act(async () => {
+        fireEvent.submit(container.querySelector('form'));
+      });
+
+      // then
+      expect(onSubmitSpy).to.have.been.calledOnce;
+      expect(onSubmitSpy).to.have.been.calledWith(merge({}, DEFAULT_INITIAL_FIELD_VALUES, {
+        variables: '{ "foo": "bar" }'
+      }));
+    });
+
+
+    it('should be disabled when submitting', async function() {
+
+      // given
+      const onSubmitSpy = sinon.spy((_, props) => {
+
+        // then
+        expect(props.isSubmitting).to.be.true;
+        expect(container.querySelector('button[type="submit"]').disabled).to.be.true;
+
+        return Promise.resolve();
+      });
+
+      const { container } = createStartInstanceConfigForm({
+        onSubmit: onSubmitSpy
+      });
+
+      // when
+      await act(async () => {
+        fireEvent.submit(container.querySelector('form'));
+      });
+
+      // then
+      expect(onSubmitSpy).to.have.been.calledOnce;
+    });
+
+  });
+
+
+  describe('validation', function() {
+
+    it('should validate form and fields on mount', async function() {
+
+      // given
+      const validateFieldSpy = sinon.spy(),
+            validateFormSpy = sinon.spy();
+
+      createStartInstanceConfigForm({
+        validateField: validateFieldSpy,
+        validateForm: validateFormSpy
+      });
+
+      // then
+      expect(validateFieldSpy.callCount).to.eql(2);
+
+      expect(validateFieldSpy).to.have.been.calledWith('variables', '{}');
+      expect(validateFieldSpy).to.have.been.calledWith('businessId', undefined);
+
+      expect(validateFormSpy).to.have.been.calledOnce;
+
+      expect(validateFormSpy).to.have.been.calledWith({
+        variables: '{}'
+      });
+    });
+
+
+    it('should validate form on submit', async function() {
+
+      // given
+      const validateFieldSpy = sinon.spy(),
+            validateFormSpy = sinon.spy();
+
+      const { container } = createStartInstanceConfigForm({
+        validateField: validateFieldSpy,
+        validateForm: validateFormSpy
+      });
+
+      // then
+      expect(validateFormSpy).to.have.been.calledWith({
+        variables: '{}'
+      });
+
+      // when
+      validateFieldSpy.resetHistory();
+      validateFormSpy.resetHistory();
+
+      await act(async () => {
+        fireEvent.submit(container.querySelector('form'));
+      });
+
+      // then
+      expect(validateFieldSpy.callCount).to.eql(2);
+      expect(validateFormSpy.callCount).to.eql(1);
+    });
+
+
+    it('should validate form on blur', async function() {
+
+      // given
+      const validateFieldSpy = sinon.spy(),
+            validateFormSpy = sinon.spy();
+
+      const { container } = createStartInstanceConfigForm({
+        validateField: validateFieldSpy,
+        validateForm: validateFormSpy
+      });
+
+      // then
+      expect(validateFormSpy).to.have.been.calledWith({
+        variables: '{}'
+      });
+
+      // when
+      validateFieldSpy.resetHistory();
+      validateFormSpy.resetHistory();
+
+      await act(async () => {
+        fireEvent.blur(container.querySelector('textarea[name="variables"]'), {
+          target: { name: 'variables', value: '{ "foo": "bar" }' }
+        });
+      });
+
+      // then
+      expect(validateFieldSpy.callCount).to.eql(2);
+      expect(validateFormSpy.callCount).to.eql(1);
+    });
+
+
+    it('should validate field value on change', async function() {
+
+      // given
+      const validateFieldSpy = sinon.spy();
+
+      const { container } = createStartInstanceConfigForm({
+        validateField: validateFieldSpy
+      });
+
+      // when
+      await act(async () => {
+        fireEvent.change(container.querySelector('textarea[name="variables"]'), {
+          target: { name: 'variables', value: '{ "foo": "bar" }' }
+        });
+      });
+
+      // then
+      expect(validateFieldSpy).to.have.been.calledWith('variables', '{ "foo": "bar" }');
+    });
+
+
+    it('should add field error (getFieldError)', async function() {
+
+      // given
+      const { container } = createStartInstanceConfigForm({
+        getFieldError: (fieldName) => {
+          return fieldName === 'variables' ? 'Error' : undefined;
+        }
+      });
+
+      // then
+      expect(getErrorMessage(container).textContent).to.eql('Error');
+    });
+
+
+    it('should add field error (meta.error)', async function() {
+
+      // given
+      const { container } = createStartInstanceConfigForm({
+        validateField: (name, value) => name === 'variables' && value === '{' ? 'Error' : undefined
+      });
+
+      // when
+      await act(async () => {
+        fireEvent.change(container.querySelector('textarea[name="variables"]'), {
+          target: { name: 'variables', value: '{' }
+        });
+      });
+
+      await act(async () => {
+        fireEvent.blur(container.querySelector('textarea[name="variables"]'));
+      });
+
+      // then
+      expect(getErrorMessage(container).textContent).to.eql('Error');
+    });
+
+
+    it('should remove field error (getFieldError)', async function() {
+
+      // given
+      let error = 'Error';
+
+      const getFieldError = (meta, fieldName) => fieldName === 'variables' ? error : undefined;
+
+      const { container } = createStartInstanceConfigForm({
+        getFieldError,
+        initialFieldValues: {
+          endpoint: {
+            camundaCloudClientId: 'foo'
+          }
+        }
+      });
+
+      // when
+      error = undefined;
+
+      await act(async () => {
+        fireEvent.change(container.querySelector('textarea[name="variables"]'), {
+          target: { name: 'variables', value: 'bar' }
+        });
+      });
+
+      // then
+      expect(getErrorMessage(container)).to.be.null;
+    });
+
+
+    it('should remove field error (meta.error)', async function() {
+
+      // given
+      const { container } = createStartInstanceConfigForm({
+        validateField: (name, value) => name === 'variables' && value === 'foo' ? 'Error' : undefined
+      });
+
+      await act(async () => {
+        fireEvent.change(container.querySelector('textarea[name="variables"]'), {
+          target: { name: 'variables', value: 'foo' }
+        });
+      });
+
+      await act(async () => {
+        fireEvent.blur(container.querySelector('textarea[name="variables"]'));
+      });
+
+      // when
+      await act(async () => {
+        fireEvent.change(container.querySelector('textarea[name="variables"]'), {
+          target: { name: 'variables', value: 'bar' }
+        });
+      });
+
+      await act(async () => {
+        fireEvent.blur(container.querySelector('textarea[name="variables"]'));
+      });
+
+
+      expect(getErrorMessage(container)).to.be.null;
+    });
+
+  });
+
+
+  describe('lint errors', function() {
+
+    it('should show lint error feedback', function() {
+
+      // when
+      const { queryByText } = createStartInstanceConfigForm({
+        hasLintErrors: true
+      });
+
+      // then
+      expect(queryByText(/has errors/)).to.exist;
+    });
+
+
+    it('should not show lint error feedback if no lint errors', function() {
+
+      // when
+      const { queryByText } = createStartInstanceConfigForm({
+        hasLintErrors: false
+      });
+
+      // then
+      expect(queryByText(/has errors/)).to.not.exist;
+    });
+
+
+    it('should not show lint error feedback if connection check failed', function() {
+
+      // when
+      const { queryByText } = createStartInstanceConfigForm({
+        hasLintErrors: true,
+        connectionCheckResult: { success: false, reason: 'CONTACT_POINT_UNAVAILABLE' }
+      });
+
+      // then
+      expect(queryByText(/has errors/)).to.not.exist;
+      expect(queryByText(/Could not establish connection/)).to.exist;
+    });
+
+
+    it('should open linting panel on click', function() {
+
+      // given
+      const handleOpenLintingPanelSpy = sinon.spy();
+
+      const { getByText } = createStartInstanceConfigForm({
+        hasLintErrors: true,
+        handleOpenLintingPanel: handleOpenLintingPanelSpy
+      });
+
+      // when
+      fireEvent.click(getByText('Show errors.'));
+
+      // then
+      expect(handleOpenLintingPanelSpy).to.have.been.calledOnce;
+    });
+
+  });
+
+});
+
+const DEFAULT_INITIAL_FIELD_VALUES = {
+  variables: '{}'
+};
+
+function createStartInstanceConfigForm(props = {}) {
+  let {
+    connectionCheckResult,
+    getFieldError = (_meta, _fieldName) => {},
+    handleChangeConnections = () => {},
+    handleManageConnections = () => {},
+    handleOpenLintingPanel = () => {},
+    hasLintErrors = false,
+    initialFieldValues = {},
+    onSubmit = () => {},
+    renderHeader = null,
+    renderSubmit = 'Submit',
+    validateField = () => {},
+    validateForm = () => {},
+    VariablesComponent = TextInput,
+    variablesComponentProps = {
+      multiline: true
+    }
+  } = props;
+
+  initialFieldValues = merge({}, DEFAULT_INITIAL_FIELD_VALUES, initialFieldValues);
+
+  return render(<StartInstanceConfigForm
+    connectionCheckResult={ connectionCheckResult }
+    getFieldError={ getFieldError }
+    handleChangeConnections={ handleChangeConnections }
+    handleManageConnections={ handleManageConnections }
+    handleOpenLintingPanel={ handleOpenLintingPanel }
+    hasLintErrors={ hasLintErrors }
+    initialFieldValues={ initialFieldValues }
+    onSubmit={ onSubmit }
+    renderHeader={ renderHeader }
+    renderSubmit={ renderSubmit }
+    validateField={ validateField }
+    validateForm={ validateForm }
+    VariablesComponent={ VariablesComponent }
+    variablesComponentProps={ variablesComponentProps } />);
+}
+
+function rerenderStartInstanceConfigForm(rerender, props = {}) {
+  let {
+    connectionCheckResult,
+    getFieldError = () => {},
+    handleChangeConnections = () => {},
+    handleManageConnections = () => {},
+    handleOpenLintingPanel = () => {},
+    hasLintErrors = false,
+    initialFieldValues = {},
+    onSubmit = () => {},
+    renderHeader = null,
+    renderSubmit = 'Submit',
+    validateField = () => {},
+    validateForm = () => {},
+    VariablesComponent = TextInput,
+    variablesComponentProps = {
+      multiline: true
+    }
+  } = props;
+
+  initialFieldValues = merge({}, DEFAULT_INITIAL_FIELD_VALUES, initialFieldValues);
+
+  rerender(<StartInstanceConfigForm
+    connectionCheckResult={ connectionCheckResult }
+    getFieldError={ getFieldError }
+    handleChangeConnections={ handleChangeConnections }
+    handleManageConnections={ handleManageConnections }
+    handleOpenLintingPanel={ handleOpenLintingPanel }
+    hasLintErrors={ hasLintErrors }
+    initialFieldValues={ initialFieldValues }
+    onSubmit={ onSubmit }
+    renderHeader={ renderHeader }
+    renderSubmit={ renderSubmit }
+    validateField={ validateField }
+    validateForm={ validateForm }
+    VariablesComponent={ VariablesComponent }
+    variablesComponentProps={ variablesComponentProps } />);
+}
+
+function getErrorMessage(container) {
+  const field = container.querySelector('[aria-invalid="true"]');
+
+  return field && document.getElementById(field.getAttribute('aria-errormessage'));
+}
+
+function getDescription(input) {
+  const id = input.getAttribute('aria-describedby');
+
+  return id && document.getElementById(id);
+}

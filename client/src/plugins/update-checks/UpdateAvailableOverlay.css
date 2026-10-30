@@ -1,0 +1,7 @@
+:local(.UpdateAvailableOverlay) {
+  .links {
+    align-self: flex-start;
+    cursor: pointer;
+  }
+}
+  

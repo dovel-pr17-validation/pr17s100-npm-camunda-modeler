@@ -1,0 +1,20 @@
+:local(.ConnectionManagerOverlay) {
+  .loading {
+    min-height: 200px;
+  }
+
+  .manage-connections-link {
+    margin-left: auto;
+    font-weight: var(--font-weight-normal);
+    color: var(--link-color);
+  }
+}
+
+:local(.ConnectionSelector) {
+  span {
+    /* non linear scaling with min and max values */
+    max-width: clamp(80px, calc(25vw - 80px), 480px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

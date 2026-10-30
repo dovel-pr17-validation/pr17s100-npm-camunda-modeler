@@ -1,0 +1,734 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import {
+  getDeploymentUrls,
+  getOperateBaseUrl,
+  getProcessId,
+  getStartInstanceUrl,
+  getTasklistBaseUrl
+} from '../util';
+
+import * as sinon from 'sinon';
+
+import { TARGET_TYPES } from '../../../remote/ZeebeAPI';
+
+describe('operate-url', function() {
+
+  describe('getOperateBaseUrl', function() {
+
+    afterEach(function() {
+      sinon.restore();
+    });
+
+    it('should get Camunda Operate URL (gRPC)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.yyy-1.zeebe.example.io:443'
+      };
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+
+    it('should get Camunda Operate URL (REST)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://yyy-1.zeebe.example.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+      };
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+
+    it('should get Camunda Operate URL (REST v2)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://yyy-1.zeebe.example.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/v2/'
+      };
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+
+    it('should get Camunda Operate URL (REST 8.9)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://yyy-1.api.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/v2'
+      };
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.api.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/operate');
+    });
+
+
+    it('should not get Camunda Operate URL if cluster ID cannot be extracted during SaaS URL generation', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://region-1.zeebe.camunda.io/cluster-name'
+      };
+
+      const originalMatch = String.prototype.match;
+      let clusterIdCalls = 0;
+
+      sinon.stub(String.prototype, 'match').callsFake(function(regex) {
+        if (this.toString() !== endpoint.camundaCloudClusterUrl) {
+          return originalMatch.call(this, regex);
+        }
+
+        if (regex.source === /([a-z\d]+-){2,}[a-z\d]+/g.source) {
+          return clusterIdCalls++ === 0 ? [ 'xxxx-xxxx-xxxx' ] : null;
+        }
+
+        if (regex.source === /(?:(?<=\.)|(?<=:\/\/))[a-z]+-\d+(?=\.)/g.source) {
+          return [ 'region-1' ];
+        }
+
+        return originalMatch.call(this, regex);
+      });
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.be.null;
+    });
+
+
+    it('should not get Camunda Operate URL if unified SaaS URL generation throws', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://yyy-1.api.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/v2'
+      };
+
+      let callCount = 0;
+
+      sinon.stub(globalThis, 'URL').callsFake(function() {
+        if (++callCount === 1) {
+          return { hostname: 'yyy-1.api.camunda.io' };
+        }
+
+        throw new Error('failed to parse unified URL');
+      });
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.be.null;
+    });
+
+
+    it('should fall back to classic SaaS URL generation if unified SaaS detection throws', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://yyy-1.zeebe.example.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+      };
+
+      const OriginalURL = globalThis.URL;
+      let callCount = 0;
+
+      sinon.stub(globalThis, 'URL').callsFake(function(input) {
+        if (++callCount === 1) {
+          throw new Error('failed to inspect URL');
+        }
+
+        return new OriginalURL(input);
+      });
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+
+    it('should not get Camunda Operate URL', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://foo.com'
+      };
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.be.null;
+    });
+
+
+    it('should get Camunda Operate URL from explicit operateUrl (self-managed)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.SELF_HOSTED,
+        operateUrl: 'https://operate.example.com'
+      };
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://operate.example.com');
+    });
+
+
+    it('should handle invalid operateUrl (self-managed)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.SELF_HOSTED,
+        operateUrl: 'not-a-url'
+      };
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.be.null;
+    });
+
+
+    it('should not get Camunda Operate URL from unsupported operateUrl protocol (self-managed)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.SELF_HOSTED,
+        operateUrl: 'javascript:alert(1)'
+      };
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.be.null;
+    });
+
+
+    it('should ignore explicit operateUrl for Camunda Cloud endpoint', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        operateUrl: 'https://operate.example.com',
+        camundaCloudClusterUrl: 'https://xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.yyy-1.zeebe.example.io:443'
+      };
+
+      // when
+      const url = getOperateBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+  });
+
+
+  describe('getTasklistBaseUrl', function() {
+
+    it('should get Camunda Tasklist URL (gRPC)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.yyy-1.zeebe.example.io:443'
+      };
+
+      // when
+      const url = getTasklistBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.tasklist.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+
+    it('should get Camunda Tasklist URL (REST)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://yyy-1.zeebe.example.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+      };
+
+      // when
+      const url = getTasklistBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.tasklist.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+
+    it('should get Camunda Tasklist URL (REST v2)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://yyy-1.zeebe.example.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/v2/'
+      };
+
+      // when
+      const url = getTasklistBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.tasklist.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+
+    it('should get Camunda Tasklist URL (REST 8.9)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://yyy-1.api.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/v2'
+      };
+
+      // when
+      const url = getTasklistBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.api.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/tasklist');
+    });
+
+
+    it('should not get Camunda Tasklist URL', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        camundaCloudClusterUrl: 'https://foo.com'
+      };
+
+      // when
+      const url = getTasklistBaseUrl(endpoint);
+
+      // then
+      expect(url).to.be.null;
+    });
+
+
+    it('should get Camunda Tasklist URL from explicit tasklistUrl (self-managed)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.SELF_HOSTED,
+        tasklistUrl: 'https://tasklist.example.com'
+      };
+
+      // when
+      const url = getTasklistBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://tasklist.example.com');
+    });
+
+
+    it('should handle invalid tasklistUrl (self-managed)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.SELF_HOSTED,
+        tasklistUrl: 'not-a-url'
+      };
+
+      // when
+      const url = getTasklistBaseUrl(endpoint);
+
+      // then
+      expect(url).to.be.null;
+    });
+
+
+    it('should not get Camunda Tasklist URL from unsupported tasklistUrl protocol (self-managed)', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.SELF_HOSTED,
+        tasklistUrl: 'javascript:alert(1)'
+      };
+
+      // when
+      const url = getTasklistBaseUrl(endpoint);
+
+      // then
+      expect(url).to.be.null;
+    });
+
+
+    it('should ignore explicit tasklistUrl for Camunda Cloud endpoint', function() {
+
+      // given
+      const endpoint = {
+        targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+        tasklistUrl: 'https://tasklist.example.com',
+        camundaCloudClusterUrl: 'https://xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.yyy-1.zeebe.example.io:443'
+      };
+
+      // when
+      const url = getTasklistBaseUrl(endpoint);
+
+      // then
+      expect(url).to.eql('https://yyy-1.tasklist.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+  });
+
+
+  describe('getDeploymentUrls', function() {
+
+    it('should get deployment URLs (BPMN)', function() {
+
+      // given
+      const deploymentResult = createMockDeploymentResult();
+
+      const config = createMockDeploymentConfig();
+
+      const tab = DEFAULT_TAB;
+
+      // when
+      const deploymentUrls = getDeploymentUrls(tab, config, deploymentResult);
+
+      // then
+      expect(deploymentUrls).to.eql([
+        {
+          processId: 'Process_1',
+          url: 'https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/processes?process=Process_1&version=1&active=true&incidents=true'
+        }
+      ]);
+    });
+
+
+    it('should get deployment URLs (DMN)', function() {
+
+      // given
+      const deploymentResult = createMockDeploymentResult();
+
+      const config = createMockDeploymentConfig();
+
+      const tab = {
+        file: {
+          name: 'bar.dmn',
+          path: 'bar.dmn'
+        },
+        type: 'cloud-dmn'
+      };
+
+      // when
+      const deploymentUrls = getDeploymentUrls(tab, config, deploymentResult);
+
+      // then
+      expect(deploymentUrls).to.eql([
+        {
+          decisionId: 'Decision_1',
+          url: 'https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/decisions?name=Decision_1&version=1'
+        },
+        {
+          decisionId: 'Decision_2',
+          url: 'https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/decisions?name=Decision_2&version=1'
+        }
+      ]);
+    });
+
+
+    it('should not get deployment URLs (form)', function() {
+
+      // given
+      const deploymentResult = createMockDeploymentResult();
+
+      const config = createMockDeploymentConfig();
+
+      const tab = {
+        file: {
+          name: 'baz.form',
+          path: 'baz.form'
+        },
+        type: 'cloud-form'
+      };
+
+      // when
+      const deploymentUrls = getDeploymentUrls(tab, config, deploymentResult);
+
+      // then
+      expect(deploymentUrls).to.eql([]);
+    });
+
+
+    it('should not get deployment URLs (no operateUrl)', function() {
+
+      // given
+      const deploymentResult = createMockDeploymentResult();
+
+      const config = createMockDeploymentConfig({
+        endpoint: createMockEndpoint({
+          targetType: TARGET_TYPES.SELF_HOSTED,
+          camundaCloudClusterUrl: null
+        })
+      });
+
+      const tab = DEFAULT_TAB;
+
+      // when
+      const deploymentUrls = getDeploymentUrls(tab, config, deploymentResult);
+
+      // then
+      expect(deploymentUrls).to.eql([]);
+    });
+
+
+    it('should get deployment URLs (self-managed with operateUrl)', function() {
+
+      // given
+      const deploymentResult = createMockDeploymentResult();
+
+      const config = createMockDeploymentConfig({
+        endpoint: createMockEndpoint({
+          targetType: TARGET_TYPES.SELF_HOSTED,
+          camundaCloudClusterUrl: null,
+          operateUrl: 'https://operate.example.com'
+        })
+      });
+
+      const tab = DEFAULT_TAB;
+
+      // when
+      const deploymentUrls = getDeploymentUrls(tab, config, deploymentResult);
+
+      // then
+      expect(deploymentUrls).to.eql([
+        {
+          processId: 'Process_1',
+          url: 'https://operate.example.com/processes?process=Process_1&version=1&active=true&incidents=true'
+        }
+      ]);
+    });
+
+  });
+
+
+  describe('getStartInstanceUrl', function() {
+
+    it('should get start instance URL', function() {
+
+      // given
+      const startInstanceResult = createMockStartInstanceResult();
+
+      const config = createMockDeploymentConfig();
+
+      // when
+      const startInstanceUrl = getStartInstanceUrl(config, startInstanceResult);
+
+      // then
+      expect(startInstanceUrl).to.eql('https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/processes/2');
+    });
+
+
+    it('should get start instance URL (self-managed with operateUrl)', function() {
+
+      // given
+      const startInstanceResult = createMockStartInstanceResult();
+
+      const config = createMockDeploymentConfig({
+        endpoint: createMockEndpoint({
+          targetType: TARGET_TYPES.SELF_HOSTED,
+          camundaCloudClusterUrl: null,
+          operateUrl: 'https://operate.example.com'
+        })
+      });
+
+      // when
+      const startInstanceUrl = getStartInstanceUrl(config, startInstanceResult);
+
+      // then
+      expect(startInstanceUrl).to.eql('https://operate.example.com/processes/2');
+    });
+
+
+    it('should not get start instance URL (no operateUrl)', function() {
+
+      // given
+      const startInstanceResult = createMockStartInstanceResult();
+
+      const config = createMockDeploymentConfig({
+        endpoint: createMockEndpoint({
+          targetType: TARGET_TYPES.SELF_HOSTED,
+          camundaCloudClusterUrl: null
+        })
+      });
+
+      // when
+      const startInstanceUrl = getStartInstanceUrl(config, startInstanceResult);
+
+      // then
+      expect(startInstanceUrl).to.be.null;
+    });
+
+  });
+
+
+  describe('getProcessId', function() {
+
+    it('should get process ID', function() {
+
+      // given
+      const deploymentResult = createMockDeploymentResult();
+
+      const fileName = 'foo.bpmn';
+
+      // when
+      const processId = getProcessId(deploymentResult, fileName);
+
+      // then
+      expect(processId).to.eql('Process_1');
+    });
+
+  });
+
+});
+
+const DEFAULT_TAB = {
+  file: {
+    name: 'foo.bpmn',
+    path: 'foo.bpmn'
+  },
+  type: 'cloud-bpmn'
+};
+
+function createMockEndpoint(overrides = {}) {
+  return {
+    targetType: TARGET_TYPES.CAMUNDA_CLOUD,
+    id: 'foo',
+    camundaCloudClientId: 'bar',
+    camundaCloudClientSecret: 'baz',
+    camundaCloudClusterUrl: 'https://xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.yyy-1.zeebe.example.io:443',
+    ...overrides
+  };
+}
+
+function createMockDeploymentConfig(overrides = {}) {
+  return {
+    deployment: {},
+    endpoint: createMockEndpoint(),
+    ...overrides
+  };
+}
+
+function createMockDeploymentResult(overrides = {}) {
+  return {
+    success: true,
+    response: {
+      deployments: [
+        {
+          process: {
+            bpmnProcessId: 'Process_1',
+            version: 1,
+            processDefinitionKey: '1',
+            resourceName: 'foo.bpmn',
+            tenantId: '<default>'
+          },
+          Metadata: 'process'
+        },
+        {
+          decision: {
+            dmnDecisionId: 'Decision_1',
+            dmnDecisionName: 'Foo',
+            version: 1,
+            decisionKey: '2',
+            dmnDecisionRequirementsId: 'Definitions_1',
+            decisionRequirementsKey: '4',
+            tenantId: '<default>'
+          },
+          Metadata: 'decision'
+        },
+        {
+          decision: {
+            dmnDecisionId: 'Decision_2',
+            dmnDecisionName: 'Bar',
+            version: 1,
+            decisionKey: '3',
+            dmnDecisionRequirementsId: 'Definitions_1',
+            decisionRequirementsKey: '4',
+            tenantId: '<default>'
+          },
+          Metadata: 'decision'
+        },
+        {
+          decisionRequirements: {
+            dmnDecisionRequirementsId: 'Definitions_1',
+            dmnDecisionRequirementsName: 'Bar',
+            version: 1,
+            decisionRequirementsKey: '4',
+            resourceName: 'bar.dmn',
+            tenantId: '<default>'
+          },
+          Metadata: 'decisionRequirements'
+        },
+        {
+          form: {
+            formId: 'Form_1',
+            version: 1,
+            formKey: '5',
+            resourceName: 'baz.form',
+            tenantId: '<default>'
+          },
+          Metadata: 'form'
+        }
+      ],
+      key: '1234567890123456',
+      tenantId: '<default>'
+    },
+    ...overrides
+  };
+}
+
+function createMockStartInstanceResult(overrides = {}) {
+  return {
+    success: true,
+    response: {
+      processDefinitionKey: '1',
+      bpmnProcessId: 'Process_1',
+      version: 1,
+      processInstanceKey: '2',
+      tenantId: '<default>'
+    },
+    ...overrides
+  };
+}

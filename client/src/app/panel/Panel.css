@@ -1,0 +1,47 @@
+:root {
+  --panel-text-color: var(--foreground);
+}
+
+:local(.Panel) {
+  height: 100%;
+  color: var(--panel-text-color);
+
+  .panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-inline: 8px;
+    border-block: 1px solid var(--app-bar-border-color);
+    background-color: var(--app-bar-background-color);
+  }
+
+  .panel__actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* the design system ghost hover is the bar color itself */
+  .panel__action:hover {
+    background-color: var(--app-bar-item-hover-background-color);
+  }
+
+  .panel__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    position: relative;
+    background-color: var(--app-content-background-color);
+
+    .panel__inner {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+
+      &:focus-visible {
+        box-shadow: inset var(--focus-shadow);
+      }
+    }
+  }
+}

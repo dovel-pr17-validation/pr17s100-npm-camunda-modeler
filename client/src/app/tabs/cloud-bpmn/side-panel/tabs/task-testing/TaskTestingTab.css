@@ -1,0 +1,8 @@
+:local(.TaskTestingTab) {
+  height: 100%;
+  background: var(--app-panel-background-color);
+
+  .code__editor *, .output__banner-incident * {
+    user-select: text;
+  }
+}

@@ -1,0 +1,1447 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+
+import React, { createRef } from 'react';
+
+import { render, waitFor } from '@testing-library/react';
+
+import {
+  Cache,
+  WithCachedState
+} from '../../../cached';
+
+import {
+  DEFAULT_ENGINE_PROFILE,
+  FORM_PREVIEW_TRIGGER,
+  FormEditor
+} from '../FormEditor';
+
+import {
+  getDefaultCopyCutPasteEntries,
+  getSelectionEntries,
+  getUndoRedoEntries
+} from '../../getEditMenu';
+
+import { FormPlayground as FormPlaygroundMock } from 'test/mocks/form-js';
+
+import schema from './form.form';
+
+import engineProfileSchema from '../../__tests__/EngineProfile.platform.form';
+import noEngineProfile from '../../__tests__/EngineProfile.vanilla.form';
+import unknownEngineProfileSchema from '../../__tests__/EngineProfile.unknown.form';
+import missingPatchEngineProfile from '../../__tests__/EngineProfile.missing-patch.platform.form';
+import patchEngineProfile from '../../__tests__/EngineProfile.patch.platform.form';
+
+import { SlotFillRoot } from '../../../slot-fill';
+
+const { spy } = sinon;
+
+
+describe('<FormEditor>', function() {
+
+  it('should render', async function() {
+    const { instance } = await renderEditor(schema);
+
+    expect(instance).to.exist;
+  });
+
+
+  describe('caching behavior', function() {
+
+    let createCachedStateSpy;
+
+    beforeEach(function() {
+      createCachedStateSpy = sinon.spy(FormEditor, 'createCachedState');
+    });
+
+    afterEach(function() {
+      createCachedStateSpy.restore();
+    });
+
+
+    it('should create editor if not cached', async function() {
+
+      // when
+      const {
+        instance
+      } = await renderEditor(schema);
+
+      // then
+      const {
+        form
+      } = instance.getCached();
+
+      expect(form).to.exist;
+      expect(createCachedStateSpy).to.have.been.calledOnce;
+    });
+
+
+    it('should use cached form', async function() {
+
+      // given
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock()
+        },
+        __destroy: () => {}
+      });
+
+      // when
+      await renderEditor(schema, {
+        id: 'editor',
+        cache
+      });
+
+      // then
+      expect(createCachedStateSpy).not.to.have.been.called;
+    });
+
+  });
+
+
+  it('#getXML', async function() {
+
+    // given
+    const { instance } = await renderEditor(schema);
+
+    // when
+    const exportedSchema = instance.getXML();
+
+    // then
+    expect(exportedSchema).to.exist;
+    expect(exportedSchema).to.eql(schema);
+  });
+
+
+  it('#getInputData', async function() {
+
+    // given
+    const { instance } = await renderEditor(schema);
+
+    // when
+    const inputData = instance.getInputData();
+
+    // then
+    expect(inputData).not.to.be.undefined;
+    expect(inputData).to.equal(null);
+  });
+
+
+  it('#getFormPreviewState', async function() {
+
+    // given
+    const { instance } = await renderEditor(schema);
+
+    // when
+    const previewState = instance.getFormPreviewState();
+
+    // then
+    expect(previewState).not.to.be.undefined;
+    expect(previewState).to.equal(null);
+  });
+
+
+  describe('#listen', function() {
+
+    function expectHandleChanged(event) {
+      return async function() {
+        const form = new FormPlaygroundMock();
+
+        const cache = new Cache();
+
+        cache.add('editor', {
+          cached: {
+            form,
+            lastSchema: schema
+          },
+          __destroy: () => {}
+        });
+
+        const onChangedSpy = spy();
+
+        await renderEditor(schema, {
+          id: 'editor',
+          cache,
+          onChanged: onChangedSpy,
+          waitForImport: false
+        });
+
+        form._editor._emit(event);
+
+        expect(onChangedSpy).to.have.been.called;
+      };
+    }
+
+
+    it('commandStack.changed', expectHandleChanged('commandStack.changed'));
+
+    it('propertiesPanel.focusin', expectHandleChanged('propertiesPanel.focusin'));
+
+    it('propertiesPanel.focusout', expectHandleChanged('propertiesPanel.focusout'));
+
+    it('selection.changed', expectHandleChanged('selection.changed'));
+
+    it('attach', expectHandleChanged('attach'));
+
+  });
+
+
+  describe('#handleChanged', function() {
+
+    function createCache() {
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          engineProfile: DEFAULT_ENGINE_PROFILE,
+          form: new FormPlaygroundMock({
+            modules: {
+              commandStack: {
+                canRedo: () => true,
+                canUndo: () => true,
+                _stackIdx: 1
+              },
+              selection: {
+                get: () => []
+              }
+            }
+          }),
+          lastSchema: schema,
+          stackIdx: 2
+        },
+        __destroy: () => {}
+      });
+
+      return cache;
+    }
+
+    it('should notify about changes', async function() {
+
+      // given
+      const onChangedSpy = spy((state) => {
+
+        // then
+        expect(state).to.include({
+          defaultUndoRedo: false,
+          dirty: true,
+          inputActive: false,
+          redo: true,
+          save: true,
+          undo: true
+        });
+      });
+
+      const { instance } = await renderEditor(schema, {
+        cache: createCache(),
+        id: 'editor',
+        onChanged: onChangedSpy,
+        waitForImport: false
+      });
+
+      // when
+      instance.handleChanged();
+
+      // then
+      expect(onChangedSpy).to.have.been.calledOnce;
+    });
+
+
+    describe('edit menu', function() {
+
+      it('should provide undo/redo entries', async function() {
+
+        // given
+        const onChangedSpy = spy((state) => {
+
+          const editMenuEntries = getUndoRedoEntries(state);
+
+          // then
+          expect(state.editMenu).to.deep.include(editMenuEntries);
+        });
+
+        const { instance } = await renderEditor(schema, {
+          cache: createCache(),
+          id: 'editor',
+          onChanged: onChangedSpy,
+          waitForImport: false
+        });
+
+        // when
+        instance.handleChanged();
+
+        // then
+        expect(onChangedSpy).to.have.been.calledOnce;
+      });
+
+
+      it('should provide copy/paste entries', async function() {
+
+        // given
+        const onChangedSpy = spy((state) => {
+
+          const editMenuEntries = getDefaultCopyCutPasteEntries(false);
+
+          // then
+          expect(state.editMenu).to.deep.include(editMenuEntries);
+        });
+
+        const { instance } = await renderEditor(schema, {
+          cache: createCache(),
+          id: 'editor',
+          onChanged: onChangedSpy,
+          waitForImport: false
+        });
+
+        // when
+        instance.handleChanged();
+
+        // then
+        expect(onChangedSpy).to.have.been.calledOnce;
+      });
+
+
+      it('should provide selection entries', async function() {
+
+        // given
+        const onChangedSpy = (state) => {
+
+          const editMenuEntries = getSelectionEntries(state);
+
+          // then
+          expect(state.editMenu).to.deep.include(editMenuEntries);
+        };
+
+        const { instance } = await renderEditor(schema, {
+          onChanged: onChangedSpy
+        });
+
+        // when
+        instance.handleChanged();
+      });
+
+    });
+
+  });
+
+
+  describe('#triggerAction', function() {
+
+    it('should return value of editor action', async function() {
+
+      // given
+      const editorActions = {
+        isRegistered(action) {
+          return action === 'foo';
+        },
+        trigger(action, context) {
+          if (action === 'foo') {
+            return 'bar';
+          }
+        }
+      };
+
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock({
+            modules: {
+              editorActions
+            }
+          })
+        }
+      });
+
+      // when
+      const { instance } = await renderEditor(schema, { cache });
+
+      // when
+      const returnValue = instance.triggerAction('foo');
+
+      // then
+      expect(returnValue).to.equal('bar');
+    });
+
+
+    it('should trigger showLintError', async function() {
+
+      // given
+      const triggerSpy = spy();
+
+      const editorActions = {
+        isRegistered(action) {
+          return action === 'selectFormField';
+        },
+        trigger: triggerSpy
+      };
+
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock({
+            modules: {
+              editorActions
+            }
+          })
+        }
+      });
+
+      // when
+      const { instance } = await renderEditor(schema, { cache });
+
+      // when
+      instance.triggerAction('showLintError', {
+        id: 'foo',
+        path: []
+      });
+
+      // then
+      expect(triggerSpy).to.have.been.calledOnceWith('selectFormField', {
+        id: 'foo',
+        path: []
+      });
+    });
+
+
+    it('should trigger collapsePreview', async function() {
+
+      // given
+      const { instance } = await renderEditor(schema);
+
+      const triggerSpy = sinon.spy(instance, 'onCollapsePreview');
+
+      // when
+      instance.triggerAction('collapsePreview');
+
+      // then
+      expect(triggerSpy).to.have.been.calledOnce;
+    });
+
+
+    it('should trigger openPreview', async function() {
+
+      // given
+      const { instance } = await renderEditor(schema);
+
+      const triggerSpy = sinon.spy(instance, 'onOpenPreview');
+
+      // when
+      instance.triggerAction('openPreview');
+
+      // then
+      expect(triggerSpy).to.have.been.calledOnce;
+    });
+
+  });
+
+
+  describe('import', function() {
+
+    afterEach(sinon.restore);
+
+
+    it('should import without errors and warnings', async function() {
+
+      // given
+      const onImportSpy = spy((error, warnings) => {
+
+        // then
+        expect(error).to.not.exist;
+        expect(warnings).to.be.empty;
+      });
+
+      // when
+      await renderEditor(schema, {
+        onImport: onImportSpy
+      });
+
+      // then
+      expect(onImportSpy).to.have.been.calledOnce;
+    });
+
+
+    it('should import with error', async function() {
+
+      // given
+      const onImportSpy = spy((error, warnings) => {
+
+        // then
+        expect(error).to.exist;
+        expect(warnings).to.have.length(0);
+      });
+
+      // when
+      await renderEditor('{ "importError": true }', {
+        onImport: onImportSpy
+      });
+
+      // then
+      expect(onImportSpy).to.have.been.calledOnce;
+    });
+
+
+    it('should not import when provided JSON is the same as the cached one', async function() {
+
+      // given
+      const isImportNeededSpy = sinon.spy(FormEditor.prototype, 'isImportNeeded');
+
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock(),
+          lastSchema: schema
+        },
+        __destroy: () => {}
+      });
+
+      await renderEditor(schema, {
+        cache,
+        waitForImport: false
+      });
+
+      // then
+      expect(isImportNeededSpy).to.have.been.calledOnce;
+      expect(isImportNeededSpy).to.have.always.returned(false);
+    });
+
+
+    it('should not import when props did not change', async function() {
+
+      // given
+      const { instance } = await renderEditor(schema);
+
+      const isImportNeededSpy = sinon.spy(instance, 'isImportNeeded');
+
+      // when
+      await instance.componentDidUpdate({
+        xml: schema
+      });
+
+      // then
+      expect(isImportNeededSpy).to.have.been.calledOnce;
+      expect(isImportNeededSpy).to.have.always.returned(false);
+    });
+
+
+    it('should unset lastXML on import error', async function() {
+
+      // given
+      const { instance } = await renderEditor(schema);
+
+      // assume
+      await waitFor(() => {
+        expect(instance.getCached().lastSchema).to.equal(schema);
+      });
+
+      // when
+      await instance.importSchema('{ "importError": true }');
+
+      // then
+      await waitFor(() => {
+        expect(instance.getCached().lastSchema).to.be.null;
+      });
+    });
+
+  });
+
+
+  describe('dirty state', function() {
+
+    let instance;
+
+    beforeEach(async function() {
+      ({ instance } = await renderEditor(schema));
+    });
+
+
+    it('should NOT be dirty initially', function() {
+
+      // then
+      const dirty = instance.isDirty();
+
+      expect(dirty).to.be.false;
+    });
+
+
+    it('should be dirty after modeling', function() {
+
+      // given
+      const { form } = instance.getCached();
+
+      // when
+      // execute 1 command
+      form.get('commandStack').execute(1);
+
+      // then
+      const dirty = instance.isDirty();
+
+      expect(dirty).to.be.true;
+    });
+
+
+    it('should NOT be dirty after modeling -> undo', function() {
+
+      // given
+      const { form } = instance.getCached();
+
+      form.get('commandStack').execute(1);
+
+      // when
+      form.get('commandStack').undo();
+
+      // then
+      const dirty = instance.isDirty();
+
+      expect(dirty).to.be.false;
+    });
+
+
+    it('should NOT be dirty after save', async function() {
+
+      // given
+      const { form } = instance.getCached();
+
+      // execute 1 command
+      form.get('commandStack').execute(1);
+
+      // when
+      instance.getXML();
+
+      // then
+      await waitFor(() => {
+        const dirty = instance.isDirty();
+        expect(dirty).to.be.false;
+      });
+    });
+
+  });
+
+
+  describe('engine profile', function() {
+
+    function expectEngineProfile(schema, engineProfile) {
+      return async function() {
+
+        // when
+        const { instance } = await renderEditor(schema);
+
+        // then
+        await waitFor(() => {
+          expect(instance.getCached().engineProfile).to.eql(engineProfile);
+        });
+      };
+    }
+
+    it('should show engine profile (no engine profile)', expectEngineProfile(noEngineProfile, {
+      executionPlatform: 'Camunda Platform',
+      executionPlatformVersion: undefined
+    }));
+
+
+    it('should show engine profile (Camunda 7.16.0)', expectEngineProfile(engineProfileSchema, {
+      executionPlatform: 'Camunda Platform',
+      executionPlatformVersion: '7.16.0'
+    }));
+
+
+    it('should show engine profile (Camunda 7.16)', expectEngineProfile(missingPatchEngineProfile, {
+      executionPlatform: 'Camunda Platform',
+      executionPlatformVersion: '7.16.0'
+    }));
+
+
+    it('should show engine profile (Camunda 7.16.1)', expectEngineProfile(patchEngineProfile, {
+      executionPlatform: 'Camunda Platform',
+      executionPlatformVersion: '7.16.1'
+    }));
+
+
+    it('should update cached engine profile on change', async function() {
+
+      // given
+      const { instance } = await renderEditor(engineProfileSchema);
+
+      // assume
+      await waitFor(() => {
+        expect(instance.getCached().engineProfile).to.eql({
+          executionPlatform: 'Camunda Platform',
+          executionPlatformVersion: '7.16.0'
+        });
+      });
+
+      // when
+      const schema = instance.getCached().form.getSchema();
+
+      schema.executionPlatform = 'Camunda Platform';
+      schema.executionPlatformVersion = '7.15.0';
+
+      instance.handleChanged();
+
+      // then
+      await waitFor(() => {
+        expect(instance.getCached().engineProfile).to.eql({
+          executionPlatform: 'Camunda Platform',
+          executionPlatformVersion: '7.15.0'
+        });
+      });
+    });
+
+
+    it('should open unknown execution profile form as Camunda Cloud', async function() {
+
+      // given
+      const onImportSpy = spy();
+
+      // when
+      const { instance } = await renderEditor(unknownEngineProfileSchema, {
+        onImport: onImportSpy
+      });
+
+      // then
+      await waitFor(() => {
+        expect(onImportSpy).to.have.been.calledOnce;
+      });
+
+      await waitFor(() => {
+        expect(instance.getCached().engineProfile).to.eql({
+          executionPlatform: 'Camunda Cloud',
+          executionPlatformVersion: '7.16.0'
+        });
+      });
+    });
+
+
+    it('should emit tab.engineProfileChanged event on import', async function() {
+
+      // given
+      const emitSpy = spy();
+
+      // when
+      await renderEditor(engineProfileSchema, {
+        emit: emitSpy
+      });
+
+      // then
+      await waitFor(() => {
+        expect(emitSpy).to.have.been.calledWithMatch('tab.engineProfileChanged', {
+          executionPlatform: 'Camunda Platform',
+          executionPlatformVersion: '7.16.0'
+        });
+      });
+    });
+
+
+    it('should NOT emit tab.engineProfileChanged event when engine profile unchanged', async function() {
+
+      // given
+      const emitSpy = spy();
+
+      const { instance } = await renderEditor(engineProfileSchema, {
+        emit: emitSpy
+      });
+
+      await waitFor(() => {
+        expect(emitSpy).to.have.been.calledWith('tab.engineProfileChanged');
+      });
+
+      emitSpy.resetHistory();
+
+      // when
+      instance.engineProfile.setCached({
+        executionPlatform: 'Camunda Platform',
+        executionPlatformVersion: '7.16.0'
+      });
+
+      // then
+      expect(emitSpy).not.to.have.been.calledWith('tab.engineProfileChanged');
+    });
+
+
+  });
+
+
+  describe('linting', function() {
+
+    describe('behavior', function() {
+
+      it('should lint on import (engine profile)', async function() {
+
+        // given
+        const onActionSpy = spy();
+
+        // when
+        const { instance } = await renderEditor(engineProfileSchema, {
+          onAction: onActionSpy
+        });
+
+        // then
+        await waitFor(() => {
+          const { form } = instance.getCached();
+          expect(onActionSpy).to.have.been.calledWith('lint-tab', { contents: form.getSchema() });
+        });
+      });
+
+
+      it('should lint on commandStack.changed (engine profile)', async function() {
+
+        // given
+        const onActionSpy = spy();
+
+        const { instance } = await renderEditor(engineProfileSchema, {
+          onAction: onActionSpy
+        });
+
+        // wait for initial lint
+        await waitFor(() => {
+          const { form } = instance.getCached();
+          expect(form).to.exist;
+          const calls = onActionSpy.getCalls()
+            .filter(call => call.args[0] === 'lint-tab');
+          expect(calls).to.have.lengthOf(1);
+        });
+
+        // when
+        const { form } = instance.getCached();
+
+        form._editor._emit('commandStack.changed');
+
+        // then
+        await waitFor(() => {
+          const calls = onActionSpy.getCalls()
+            .filter(call => call.args[0] === 'lint-tab');
+
+          expect(calls).to.have.lengthOf(2);
+
+          calls.forEach(function(call) {
+            expect(call[1] === form.getSchema());
+          });
+        });
+      });
+
+
+      it('should not lint on import or commandStack.changed (no engine profile)', async function() {
+
+        // given
+        const onActionSpy = spy();
+
+        const { instance } = await renderEditor(schema, {
+          onAction: onActionSpy
+        });
+
+        // when
+        const { form } = instance.getCached();
+
+        form.emit('commandStack.changed');
+
+        // then
+        expect(onActionSpy).not.to.have.been.calledWith('lint-tab');
+      });
+
+
+      it('should unsubscribe on unmount', async function() {
+
+        // given
+        const onActionSpy = spy();
+
+        const {
+          instance,
+          unmount
+        } = await renderEditor(engineProfileSchema, {
+          onAction: onActionSpy
+        });
+
+        // wait for initial lint
+        await waitFor(() => {
+          const calls = onActionSpy.getCalls()
+            .filter(call => call.args[0] === 'lint-tab');
+          expect(calls).to.have.lengthOf(1);
+        });
+
+        const { form } = instance.getCached();
+
+        // when
+        unmount();
+
+        form.emit('commandStack.changed');
+
+        const calls = onActionSpy.getCalls()
+          .filter(call => call.args[0] === 'lint-tab');
+
+        // then
+        expect(calls).to.have.lengthOf(1);
+      });
+
+
+      it('should NOT break application with linting tab open', async function() {
+
+        // given
+        const props = {
+          layout: {
+            panel: {
+              open: true,
+              tab: 'linting'
+            }
+          }
+        };
+
+        // when
+        try {
+          await renderEditor(schema, props);
+        } catch (error) {
+
+          // then
+          expect(true, 'should not reach error block').to.be.false;
+        }
+      });
+
+    });
+
+  });
+
+
+  describe('form preview', function() {
+
+    it('should set initial layout state', async function() {
+
+      // given
+      const collapseSpy = spy();
+      const openSpy = spy();
+
+      const { instance } = await renderEditor(schema, {
+        layout: {
+          formEditor: {
+            'form-preview': { open: true },
+            'form-input': { open: false },
+            'form-output': { open: false }
+          }
+        }
+      });
+
+      const { form } = instance.getCached();
+      form.collapse = collapseSpy;
+      form.open = openSpy;
+
+      // when
+      instance.handleInitialPlaygroundLayout();
+
+      // then
+      expect(collapseSpy).to.have.been.calledOnceWith([
+        'form-input', 'form-output'
+      ]);
+
+      expect(openSpy).to.have.been.calledOnceWith([
+        'form-preview'
+      ]);
+    });
+
+
+    it('should notify on layout changes', async function() {
+
+      // given
+      const onLayoutChangedSpy = spy();
+
+      const { instance } = await renderEditor(schema, {
+        layout: {
+          panel: {
+            open: false
+          }
+        },
+        onLayoutChanged: onLayoutChangedSpy
+      });
+
+      const { form } = instance.getCached();
+
+      // when
+      form.emit('formPlayground.layoutChanged', {
+        layout: {
+          'form-preview': { open: true }
+        }
+      });
+
+      // then
+      expect(onLayoutChangedSpy).to.have.been.calledOnceWith({
+        formEditor: {
+          'form-preview': { open: true }
+        }
+      });
+    });
+
+
+    it('#onCollapsePreview', async function() {
+
+      // given
+      const onLayoutChangedSpy = spy();
+
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock({
+            emitLayoutChanged: true
+          })
+        }
+      });
+
+      const { instance } = await renderEditor(schema, {
+        cache,
+        onLayoutChanged: onLayoutChangedSpy
+      });
+
+      // when
+      instance.onCollapsePreview();
+
+      // then
+      expect(onLayoutChangedSpy).to.have.been.calledOnceWith({
+        formEditor: {
+          'form-preview': { open: false },
+          'form-input': { open: false },
+          'form-output': { open: false }
+        }
+      });
+    });
+
+
+    it('#onOpenPreview', async function() {
+
+      // given
+      const onLayoutChangedSpy = spy();
+
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock({
+            emitLayoutChanged: true
+          })
+        }
+      });
+
+      const { instance } = await renderEditor(schema, {
+        cache,
+        onLayoutChanged: onLayoutChangedSpy
+      });
+
+      // when
+      instance.onOpenPreview();
+
+      // then
+      expect(onLayoutChangedSpy).to.have.been.calledOnceWith({
+        formEditor: {
+          'form-preview': { open: true },
+          'form-input': { open: true },
+          'form-output': { open: true }
+        }
+      });
+    });
+  });
+
+
+  describe('extensions event emitting', function() {
+
+    let recordActions, emittedEvents;
+
+    beforeEach(function() {
+      emittedEvents = [];
+
+      recordActions = (type, payload) => {
+        emittedEvents.push({ type, payload });
+      };
+    });
+
+
+    it('should notify when form was created', async function() {
+
+      // when
+      const {
+        instance
+      } = await renderEditor(engineProfileSchema, {
+        emit: recordActions
+      });
+
+      const {
+        form
+      } = instance.getCached();
+
+      // then
+      const modelerCreatedEvent = getEvent(emittedEvents, 'form.modeler.created');
+
+      const {
+        payload,
+      } = modelerCreatedEvent;
+
+      expect(modelerCreatedEvent).to.exist;
+      expect(payload).to.eql(form);
+    });
+
+
+    it('should notify on playground layout changes', async function() {
+
+      // given
+      const {
+        instance
+      } = await renderEditor(schema, {
+        emit: recordActions
+      });
+
+      const {
+        form
+      } = instance.getCached();
+
+      const layout = {
+        'form-preview': { open: true },
+        'form-input': { open: false },
+        'form-output': { open: false }
+      };
+
+      // when
+      form.emit('formPlayground.layoutChanged', {
+        layout
+      });
+
+      // then
+      const playgroundChangedEvent = getEvent(emittedEvents, 'form.modeler.playgroundLayoutChanged');
+
+      const {
+        payload
+      } = playgroundChangedEvent;
+
+      expect(playgroundChangedEvent).to.exist;
+      expect(payload).to.eql({
+        layout,
+        triggeredBy: FORM_PREVIEW_TRIGGER.PREVIEW_PANEL
+      });
+    });
+
+
+    it('should add <triggeredBy> to layout changes', async function() {
+
+      // given
+      const {
+        instance
+      } = await renderEditor(schema, {
+        emit: recordActions
+      });
+
+      const layout = {
+        'form-preview': { open: true },
+        'form-input': { open: false },
+        'form-output': { open: false }
+      };
+
+      // when
+      instance.setState({ triggeredBy: 'foo' });
+
+      // assume
+      await waitFor(() => {
+        expect(instance.state.triggeredBy).to.equal('foo');
+      });
+
+      instance.handlePlaygroundLayoutChanged({
+        layout
+      });
+
+      // then
+      const playgroundChangedEvent = getEvent(emittedEvents, 'form.modeler.playgroundLayoutChanged');
+
+      const {
+        payload
+      } = playgroundChangedEvent;
+
+      expect(playgroundChangedEvent).to.exist;
+      expect(payload).to.eql({
+        layout,
+        triggeredBy: 'foo'
+      });
+    });
+
+
+    it('should notify when form preview was touched', async function() {
+
+      // given
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock({
+            form: {
+              _getState: () => Math.random()
+            }
+          })
+        },
+        __destroy: () => {}
+      });
+
+      const {
+        container
+      } = await renderEditor(engineProfileSchema, {
+        cache,
+        emit: recordActions
+      });
+
+      const previewContainer = container.querySelector('.cfp-preview-container');
+
+      // when
+      previewContainer.dispatchEvent(new Event('focusin', { 'bubbles': true }));
+      previewContainer.dispatchEvent(new Event('focusout', { 'bubbles': true }));
+
+      // then
+      const previewChangedEvent = getEvent(emittedEvents, 'form.modeler.previewChanged');
+
+      expect(previewChangedEvent).to.exist;
+    });
+
+
+    it('should NOT notify when form preview was not touched', async function() {
+
+      // given
+      const {
+        container
+      } = await renderEditor(engineProfileSchema, {
+        emit: recordActions
+      });
+
+      const previewContainer = container.querySelector('.cfp-preview-container');
+
+      // when
+      previewContainer.dispatchEvent(new Event('focusin', { 'bubbles': true }));
+      previewContainer.dispatchEvent(new Event('focusout', { 'bubbles': true }));
+
+      // then
+      const previewChangedEvent = getEvent(emittedEvents, 'form.modeler.previewChanged');
+
+      expect(previewChangedEvent).to.not.exist;
+    });
+
+
+    it('should NOT notify when form preview changed - unlisten', async function() {
+
+      // given
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock({
+            form: {
+              _getState: () => Math.random()
+            }
+          })
+        },
+        __destroy: () => {}
+      });
+
+      const {
+        instance,
+        container
+      } = await renderEditor(engineProfileSchema, {
+        cache,
+        emit: recordActions
+      });
+
+      // when
+      instance.listen('off');
+
+      const previewContainer = container.querySelector('.cfp-preview-container');
+
+      // when
+      previewContainer.dispatchEvent(new Event('focusin', { 'bubbles': true }));
+      previewContainer.dispatchEvent(new Event('focusout', { 'bubbles': true }));
+
+      // then
+      const previewChangedEvent = getEvent(emittedEvents, 'form.modeler.previewChanged');
+
+      expect(previewChangedEvent).to.not.exist;
+    });
+
+
+    it('should notify when form input editor was touched', async function() {
+
+      // given
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock({
+            dataEditor: {
+              getValue: () => Math.random()
+            }
+          })
+        },
+        __destroy: () => {}
+      });
+
+      const {
+        container
+      } = await renderEditor(engineProfileSchema, {
+        cache,
+        emit: recordActions
+      });
+
+      const dataContainer = container.querySelector('.cfp-data-container');
+
+      // when
+      dataContainer.dispatchEvent(new Event('focusin', { 'bubbles': true }));
+      dataContainer.dispatchEvent(new Event('focusout', { 'bubbles': true }));
+
+      // then
+      const inputDataChangedEvent = getEvent(emittedEvents, 'form.modeler.inputDataChanged');
+
+      expect(inputDataChangedEvent).to.exist;
+    });
+
+
+    it('should NOT notify when form input editor was not touched', async function() {
+
+      // given
+      const {
+        container
+      } = await renderEditor(engineProfileSchema, {
+        emit: recordActions
+      });
+
+      const dataContainer = container.querySelector('.cfp-data-container');
+
+      // when
+      dataContainer.dispatchEvent(new Event('focusin', { 'bubbles': true }));
+      dataContainer.dispatchEvent(new Event('focusout', { 'bubbles': true }));
+
+      // then
+      const inputDataChangedEvent = getEvent(emittedEvents, 'form.modeler.inputDataChanged');
+
+      expect(inputDataChangedEvent).to.not.exist;
+    });
+
+
+    it('should NOT notify when form input editor changed - unlisten', async function() {
+
+      // given
+      const cache = new Cache();
+
+      cache.add('editor', {
+        cached: {
+          form: new FormPlaygroundMock({
+            dataEditor: {
+              getValue: () => Math.random()
+            }
+          })
+        },
+        __destroy: () => {}
+      });
+
+      const {
+        instance,
+        container
+      } = await renderEditor(engineProfileSchema, {
+        cache,
+        emit: recordActions
+      });
+
+      // when
+      instance.listen('off');
+
+      const dataContainer = container.querySelector('.cfp-data-container');
+
+      dataContainer.dispatchEvent(new Event('focusin', { 'bubbles': true }));
+      dataContainer.dispatchEvent(new Event('focusout', { 'bubbles': true }));
+
+      // then
+      const inputDataChangedEvent = getEvent(emittedEvents, 'form.modeler.inputDataChanged');
+
+      expect(inputDataChangedEvent).to.not.exist;
+    });
+
+  });
+
+});
+
+
+// helpers //////////
+
+function noop() {}
+
+const TestEditor = WithCachedState(FormEditor);
+
+async function renderEditor(schema, options = {}) {
+  const {
+    cache = new Cache(),
+    getConfig = noop,
+    id = 'editor',
+    layout = {},
+    onAction = noop,
+    emit = noop,
+    onChanged = noop,
+    onContentUpdated = noop,
+    onError = noop,
+    onImport = noop,
+    onLayoutChanged = noop,
+    onModal = noop,
+    waitForImport = true
+  } = options;
+
+  return new Promise((resolve) => {
+    const ref = createRef();
+
+    const resolveOnImport = (...args) => {
+      onImport(...args);
+
+      resolve({
+        instance: ref.current,
+        container,
+        unmount
+      });
+    };
+
+    const { container, unmount } = render(
+      <SlotFillRoot>
+        <TestEditor
+          ref={ ref }
+          cache={ cache }
+          getConfig={ getConfig }
+          id={ id }
+          layout={ layout }
+          onAction={ onAction }
+          emit={ emit }
+          onChanged={ onChanged }
+          onContentUpdated={ onContentUpdated }
+          onError={ onError }
+          onImport={ waitForImport ? resolveOnImport : onImport }
+          onLayoutChanged={ onLayoutChanged }
+          onModal={ onModal }
+          xml={ schema }
+        />
+      </SlotFillRoot>
+    );
+
+    const instance = ref.current;
+
+    // properly mock form playground instantiation
+    const { form } = instance.getCached();
+    form.emit('formPlayground.rendered');
+
+    if (!waitForImport) {
+      resolve({
+        instance,
+        container,
+        unmount
+      });
+    }
+  });
+}
+
+
+function getEvent(events, eventName) {
+  return events.find(e => e.type === eventName);
+}

@@ -1,0 +1,112 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+
+import React from 'react';
+
+import { render, fireEvent } from '@testing-library/react';
+
+import {
+  SlotFillRoot,
+  Slot
+} from '../../../../slot-fill';
+
+import VariablesTabActionItem from '../VariablesTabActionItem';
+
+const spy = sinon.spy;
+
+
+describe('VariablesTabActionItem', function() {
+
+  it('should render', function() {
+
+    // when
+    const { container } = renderVariablesTabActionItem();
+
+    // then
+    expect(container.querySelector('.btn--tab-action')).to.exist;
+  });
+
+
+  describe('toggle', function() {
+
+    it('should be active (open)', function() {
+
+      // when
+      const { container } = renderVariablesTabActionItem({
+        layout: {
+          variablesSidePanel: {
+            open: true
+          }
+        }
+      });
+
+      // then
+      expect(container.querySelector('.btn--tab-action').getAttribute('aria-pressed')).to.equal('true');
+    });
+
+
+    it('should not be active (closed)', function() {
+
+      // when
+      const { container } = renderVariablesTabActionItem();
+
+      // then
+      expect(container.querySelector('.btn--tab-action').getAttribute('aria-pressed')).to.equal('false');
+    });
+
+
+    it('should call callback on toggle', function() {
+
+      // given
+      const onLayoutChangedSpy = spy();
+
+      const { container } = renderVariablesTabActionItem({
+        onLayoutChanged: onLayoutChangedSpy
+      });
+
+      // when
+      fireEvent.click(container.querySelector('.btn--tab-action'));
+
+      // then
+      expect(onLayoutChangedSpy).to.have.been.calledOnce;
+    });
+
+  });
+
+});
+
+
+// helpers //////////
+
+const defaultLayout = {
+  variablesSidePanel: {
+    open: false
+  }
+};
+
+
+function renderVariablesTabActionItem(options = {}) {
+  const {
+    layout = defaultLayout,
+    onLayoutChanged = () => {}
+  } = options;
+
+  return render(
+    <SlotFillRoot>
+      <Slot name="tab-actions" />
+      <VariablesTabActionItem
+        layout={ layout }
+        onLayoutChanged={ onLayoutChanged } />
+    </SlotFillRoot>
+  );
+}

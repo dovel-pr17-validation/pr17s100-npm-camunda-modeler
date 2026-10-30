@@ -1,0 +1,49 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-default);
+  background-color: var(--background);
+  overflow: hidden;
+}
+
+/* keep app z-indexes below design system overlays, which portal to <body> */
+#root {
+  isolation: isolate;
+}
+
+:root {
+  --focus-outline-color: var(--ring);
+  --focus-shadow: 0 0 0 2px var(--focus-outline-color);
+
+  /* descriptions, hints and feedback: the smallest readable size */
+  --font-size-small: var(--text-sm);
+  --line-height-small: var(--text-sm--line-height);
+}
+
+:focus {
+  outline-color: var(--focus-outline-color);
+}
+
+.djs-container svg:focus {
+  outline: none;
+}
+
+.bjs-powered-by {
+  display: none;
+}
+
+.cjs-powered-by {
+  display: none;
+}
+
+.powered-by-logo {
+  display: none;
+}
+
+a {
+  color: var(--link-color);
+  text-decoration: underline;
+}

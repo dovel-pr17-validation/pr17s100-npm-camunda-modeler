@@ -1,0 +1,7 @@
+:local(.DeploymentConfigOverlay) {
+  .intro {
+    margin: 0 0 16px 0;
+    font-size: var(--text-sm);
+    color: var(--neutral-foreground-subtle);
+  }
+}

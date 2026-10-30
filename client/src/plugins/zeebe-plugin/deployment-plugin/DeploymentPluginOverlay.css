@@ -1,0 +1,5 @@
+:local(.DeploymentPluginOverlay) {
+  .loading {
+    min-height: 200px;
+  }
+}

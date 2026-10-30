@@ -1,0 +1,31 @@
+:local(.PanelToggleHintOverlay) {
+  position: relative;
+  width: 240px;
+  overflow: visible;
+
+  /* arrow towards the toggle; its outer edges continue the popover ring */
+  &::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    right: 16px;
+    width: 12px;
+    height: 12px;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+    background-color: var(--overlay-background-color);
+    transform: rotate(45deg);
+  }
+
+  p {
+    margin: 0;
+    font-size: var(--font-size-small);
+    line-height: var(--line-height-small);
+  }
+}
+
+:local(.PanelToggleHintClose) {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}

@@ -1,0 +1,5 @@
+:local(.StartInstancePluginOverlay) {
+  .version-hint {
+    color: var(--danger-foreground-subtle);
+  }
+}

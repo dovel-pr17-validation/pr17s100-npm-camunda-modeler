@@ -1,0 +1,496 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+
+import TaskTestingApi from '../TaskTestingApi';
+
+import { Deployment } from '../../../../../../__tests__/mocks';
+
+
+describe('<TaskTestingApi>', function() {
+
+  describe('#getOperateUrl', function() {
+
+    it('should return Operate URL for SaaS', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'camundaCloud',
+              camundaCloudClusterUrl: 'https://yyy-1.zeebe.example.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+
+      // when
+      const operateUrl = await api.getOperateUrl();
+
+      // then
+      expect(operateUrl).to.equal('https://yyy-1.operate.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+
+    it('should return Operate URL for SaaS 8.9', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'camundaCloud',
+              camundaCloudClusterUrl: 'https://yyy-1.api.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/v2'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+
+      // when
+      const operateUrl = await api.getOperateUrl();
+
+      // then
+      expect(operateUrl).to.equal('https://yyy-1.api.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/operate');
+    });
+
+
+    it('should return Operate URL for SM', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'selfHosted',
+              operateUrl: 'https://operate.example.com'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+
+      // when
+      const operateUrl = await api.getOperateUrl();
+
+      // then
+      expect(operateUrl).to.equal('https://operate.example.com');
+    });
+
+
+    it('should return URL for unsaved file', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'selfHosted',
+              operateUrl: 'https://operate.example.com'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: null
+        },
+        null
+      );
+
+
+      // when
+      const operateUrl = await api.getOperateUrl();
+
+      // then
+      expect(operateUrl).to.equal('https://operate.example.com');
+    });
+
+
+    it('should return undefined for invalid Operate URL for SM', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'selfHosted',
+              operateUrl: 'not-a-url'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+
+      // when
+      const operateUrl = await api.getOperateUrl();
+
+      // then
+      expect(operateUrl).to.be.undefined;
+    });
+
+
+    it('should return undefined for unsupported Operate URL protocol for SM', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'selfHosted',
+              operateUrl: 'javascript:alert(1)'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+
+      // when
+      const operateUrl = await api.getOperateUrl();
+
+      // then
+      expect(operateUrl).to.be.undefined;
+    });
+  });
+
+
+  describe('#getTasklistUrl', function() {
+
+    it('should return Tasklist URL for SaaS', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'camundaCloud',
+              camundaCloudClusterUrl: 'https://yyy-1.zeebe.example.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+
+      // when
+      const tasklistUrl = await api.getTasklistUrl();
+
+      // then
+      expect(tasklistUrl).to.equal('https://yyy-1.tasklist.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+
+    it('should return Tasklist URL for SaaS 8.9', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'camundaCloud',
+              camundaCloudClusterUrl: 'https://yyy-1.api.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/v2'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+
+      // when
+      const tasklistUrl = await api.getTasklistUrl();
+
+      // then
+      expect(tasklistUrl).to.equal('https://yyy-1.api.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/tasklist');
+    });
+
+
+    it('should return undefined for SM', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'selfHosted'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+
+      // when
+      const tasklistUrl = await api.getTasklistUrl();
+
+      // then
+      expect(tasklistUrl).to.be.undefined;
+    });
+
+
+    it('should return URL for unsaved file', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'camundaCloud',
+              camundaCloudClusterUrl: 'https://yyy-1.zeebe.example.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+            };
+          }
+        }),
+        null,
+        null,
+        {
+          path: null
+        },
+        null
+      );
+
+
+      // when
+      const tasklistUrl = await api.getTasklistUrl();
+
+      // then
+      expect(tasklistUrl).to.equal('https://yyy-1.tasklist.camunda.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx');
+    });
+
+  });
+
+
+  describe('#deploy', function() {
+
+    it('should save and deploy an unsaved file', async function() {
+
+      // given
+      const deploySpy = sinon.spy(() => {
+        return { success: true };
+      });
+      const savedFile = {
+        path: 'path/to/file.bpmn'
+      };
+      const api = new TaskTestingApi(
+        new Deployment({
+          deploy: deploySpy,
+          getConnectionForTab: async file => {
+            return {
+              targetType: 'camundaCloud',
+              camundaCloudClusterUrl: 'https://yyy-1.zeebe.example.io/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+            };
+          },
+          once: () => {}
+        }),
+        null,
+        null,
+        {
+          path: null
+        },
+        actionName => {
+          return actionName === 'save' && {
+            file: savedFile
+          };
+        }
+      );
+
+      // when
+      await api.deploy();
+
+      // then
+      expect(deploySpy).to.have.been.calledWith([
+        {
+          path: savedFile.path,
+          type: 'bpmn'
+        }
+      ]);
+    });
+
+
+    it('should return error details on failure', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          deploy: async () => {
+            return {
+              success: false,
+              response: {
+                message: 'Response code 400 (Bad Request).',
+                title: 'INVALID_ARGUMENT',
+                status: 400,
+                detail: 'Command \'CREATE\' rejected with code \'INVALID_ARGUMENT\': Must have at least one start event'
+              }
+            };
+          },
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'selfHosted'
+            };
+          },
+          once: () => {}
+        }),
+        null,
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        () => {
+          return {
+            file: {
+              path: 'path/to/file.bpmn'
+            }
+          };
+        }
+      );
+
+      // when
+      const result = await api.deploy();
+
+      // then
+      expect(result).to.eql({
+        success: false,
+        error: 'Command \'CREATE\' rejected with code \'INVALID_ARGUMENT\': Must have at least one start event'
+      });
+    });
+  });
+
+
+  describe('#startInstance', function() {
+
+    it('should return error details on failure', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'selfHosted'
+            };
+          }
+        }),
+        {
+          startInstance: async () => {
+            return {
+              success: false,
+              response: {
+                message: 'Response code 400 (Bad Request).',
+                title: 'INVALID_ARGUMENT',
+                status: 400,
+                detail: 'The creation of elements inside a multi-instance subprocess is not supported.'
+              }
+            };
+          }
+        },
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+      // when
+      const result = await api.startInstance('123', 'Activity_1', {});
+
+      // then
+      expect(result).to.eql({
+        success: false,
+        error: 'The creation of elements inside a multi-instance subprocess is not supported.'
+      });
+    });
+
+
+    it('should fall back to error message without problem detail', async function() {
+
+      // given
+      const api = new TaskTestingApi(
+        new Deployment({
+          getConnectionForTab: async () => {
+            return {
+              targetType: 'selfHosted'
+            };
+          }
+        }),
+        {
+          startInstance: async () => {
+            return {
+              success: false,
+              response: {
+                message: 'connect ECONNREFUSED 127.0.0.1:8080'
+              }
+            };
+          }
+        },
+        null,
+        {
+          path: 'path/to/file.bpmn'
+        },
+        null
+      );
+
+      // when
+      const result = await api.startInstance('123', 'Activity_1', {});
+
+      // then
+      expect(result).to.eql({
+        success: false,
+        error: 'connect ECONNREFUSED 127.0.0.1:8080'
+      });
+    });
+  });
+
+});

@@ -1,0 +1,18 @@
+:local(.LintingStatusBarItem) {
+  &.btn {
+    gap: 8px;
+  }
+
+  .errors,
+  .warnings,
+  .infos {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+}

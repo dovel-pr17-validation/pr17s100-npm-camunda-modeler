@@ -1,0 +1,9 @@
+:local(.StartInstanceDetailsOverlay) {
+
+  .intro {
+    margin: 0 0 4px 0;
+    font-size: var(--text-sm);
+    color: var(--neutral-foreground-subtle);
+  }
+    
+}

@@ -1,0 +1,9 @@
+:local(.FormPreviewToggle) {
+  display: flex;
+  gap: 2px;
+
+  .btn svg {
+    width: 18px;
+    height: 18px;
+  }
+}

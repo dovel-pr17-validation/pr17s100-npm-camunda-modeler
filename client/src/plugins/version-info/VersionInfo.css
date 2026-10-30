@@ -1,0 +1,17 @@
+/* same dot as the tab unsaved-changes marker, at the top corner of the version text */
+:root {
+  --unread-marker-background-color: var(--tab-dirty-marker-background-color);
+  --unread-marker-border-color: var(--tab-dirty-marker-border-color);
+}
+
+:local(.UnreadMarker) {
+  align-self: flex-start;
+  width: 6px;
+  height: 6px;
+  margin-top: 4px;
+  margin-left: -2px;
+  box-sizing: content-box;
+  border: 1px solid var(--unread-marker-border-color);
+  border-radius: 50%;
+  background-color: var(--unread-marker-background-color);
+}

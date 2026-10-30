@@ -1,0 +1,34 @@
+:local(.StatusIndicator) {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+
+  .status-icon {
+    flex-shrink: 0;
+
+    /* center on the first line of text, also when the text wraps */
+    margin-block: calc((1lh - 16px) / 2);
+  }
+
+  svg.status-icon,
+  span.status-icon.placeholder {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+  }
+
+  .status-icon--muted,
+  .status-icon--loading {
+    color: var(--neutral-foreground-subtle);
+  }
+
+  .status-icon--loading {
+    animation: status-indicator-spin 1s linear infinite;
+  }
+}
+
+@keyframes status-indicator-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

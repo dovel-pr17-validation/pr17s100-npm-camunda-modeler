@@ -1,0 +1,77 @@
+{
+  "appId": "com.camunda.CamundaModeler",
+  "productName": "Camunda Modeler",
+  "files": [
+    {
+      "filter": [
+        "**",
+        "!**/__tests__",
+        "!test",
+        "!dev.js"
+      ]
+    }
+  ],
+  "afterPack": "./tasks/after-pack.js",
+  "win": {
+    "target": [
+      {
+        "target": "zip",
+        "arch": [ "x64" ]
+      }
+    ]
+  },
+  "linux": {
+    "category": "Development",
+    "target": [
+      {
+        "target": "tar.gz",
+        "arch": [ "x64" ]
+      }
+    ]
+  },
+  "mac": {
+    "hardenedRuntime": true,
+    "entitlements": "./build/entitlements.mac.inherit.plist",
+    "target": [
+      {
+        "target": "dmg",
+        "arch": [ "x64", "arm64" ]
+      },
+      {
+        "target": "zip",
+        "arch": [ "x64", "arm64" ]
+      }
+    ]
+  },
+  "fileAssociations": [
+    {
+      "ext": "bpmn",
+      "name": "CamundaModeler.BPMN",
+      "description": "BPMN file",
+      "role": "Editor",
+      "mimeType": "application/bpmn"
+    },
+    {
+      "ext": "dmn",
+      "name": "CamundaModeler.DMN",
+      "description": "DMN file",
+      "role": "Editor",
+      "mimeType": "application/dmn"
+    },
+    {
+      "ext": "form",
+      "name": "CamundaModeler.FORM",
+      "description": "FORM file",
+      "role": "Editor",
+      "mimeType": "application/camunda-form"
+    },
+    {
+      "ext": "rpa",
+      "name": "CamundaModeler.RPA",
+      "description": "RPA file",
+      "role": "Editor",
+      "mimeType": "application/rpa"
+    }
+  ],
+  "npmArgs": "--workspaces=false"
+}

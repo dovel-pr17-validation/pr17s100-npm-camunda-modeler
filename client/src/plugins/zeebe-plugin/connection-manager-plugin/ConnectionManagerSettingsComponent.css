@@ -1,0 +1,21 @@
+:local(.ConnectionManagerSettings) {
+  .connections__description,
+  .connections__empty {
+    color: var(--neutral-foreground-subtle);
+  }
+}
+
+:local(.ConnectionDialog) {
+  .connection-check__spinner {
+    width: 16px;
+    height: 16px;
+    color: var(--neutral-foreground-subtle);
+    animation: connection-check-spin 1s linear infinite;
+  }
+}
+
+@keyframes connection-check-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

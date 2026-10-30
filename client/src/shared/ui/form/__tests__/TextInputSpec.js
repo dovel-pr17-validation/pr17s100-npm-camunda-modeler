@@ -1,0 +1,98 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+
+import React from 'react';
+
+import { render } from '@testing-library/react';
+
+import { TextInput } from '..';
+
+
+describe('<TextInput>', function() {
+
+  it('should render', function() {
+    createTextInput();
+  });
+
+
+  it('should show error', function() {
+
+    // when
+    const { getByRole, getByText } = createTextInput({
+      fieldMeta: {
+        error: 'foo',
+        touched: true
+      }
+    });
+
+    // then
+    expect(getByRole('textbox').getAttribute('aria-invalid')).to.eql('true');
+    expect(getByText('foo')).to.exist;
+  });
+
+
+  it('should pass field name to the error callback', function() {
+
+    // given
+    const fieldError = sinon.spy();
+    const field = {
+      name: 'name',
+      value: '',
+      onChange: () => {}
+    };
+    const fieldMeta = {
+      error: 'foo',
+      touched: true
+    };
+
+    // when
+    createTextInput({
+      field,
+      fieldError,
+      fieldMeta
+    });
+
+    // then
+    expect(fieldError).to.have.been.calledOnceWithExactly(fieldMeta, field.name);
+  });
+});
+
+
+// helpers ///////////////////
+
+function createTextInput(options = {}) {
+  const {
+    field,
+    fieldMeta,
+    form: mockForm,
+    ...props
+  } = options;
+
+  const form = mockForm || {
+    getFieldMeta: () => {
+      return fieldMeta || {};
+    }
+  };
+
+  const defaultField = {
+    name: 'test',
+    value: '',
+    onChange: () => {}
+  };
+
+  return render(<TextInput
+    { ...props }
+    field={ { ...defaultField, ...field } }
+    form={ form }
+  />);
+}

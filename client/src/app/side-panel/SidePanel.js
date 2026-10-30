@@ -1,0 +1,229 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+
+import classNames from 'classnames';
+
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@camunda/design-system';
+
+import ResizableContainer from '../resizable-container/ResizableContainer';
+
+import { MIN_CANVAS_WIDTH } from './SidePanelGroup';
+import useParentWidth from './useParentWidth';
+
+import * as css from './SidePanel.css';
+
+export const MIN_WIDTH = 280;
+
+export const DEFAULT_OPEN = true;
+export const DEFAULT_WIDTH = MIN_WIDTH;
+
+export const DEFAULT_LAYOUT = {
+  open: DEFAULT_OPEN,
+  tab: 'properties',
+  width: DEFAULT_WIDTH
+};
+
+
+/**
+ * A generic side panel component with optional tabs and header.
+ *
+ * @example <caption>Single tab</caption>
+ *
+ * ```jsx
+ * <SidePanel layout={layout} onLayoutChanged={onLayoutChanged}>
+ *   <SidePanel.Tab id="properties" label="Properties" icon={Settings}>
+ *     <PropertiesTab propertiesPanelRef={propertiesPanelRef} />
+ *   </SidePanel.Tab>
+ * </SidePanel>
+ * ```
+ *
+ * @example <caption>Multiple tabs with header</caption>
+ *
+ * ```jsx
+ * <SidePanel layout={layout} onLayoutChanged={onLayoutChanged}>
+ *   <SidePanel.Header>
+ *     <div ref={headerRef} />
+ *   </SidePanel.Header>
+ *   <SidePanel.Tab id="properties" label="Properties" icon={Settings}>
+ *     <PropertiesTab propertiesPanelRef={propertiesPanelRef} />
+ *   </SidePanel.Tab>
+ *   <SidePanel.Tab id="test" label="Test" icon={TaskTestingIcon}>
+ *     <TestTab config={config} ... />
+ *   </SidePanel.Tab>
+ * </SidePanel>
+ * ```
+ */
+export default function SidePanel(props) {
+  const {
+    children,
+    layout,
+    maxWidth,
+    onLayoutChanged
+  } = props;
+
+  const containerRef = useRef();
+  const parentWidth = useParentWidth(containerRef);
+  const effectiveMaxWidth = Math.max(0, maxWidth || (parentWidth - MIN_CANVAS_WIDTH));
+
+  const { sidePanel = DEFAULT_LAYOUT } = layout;
+
+  const {
+    open = DEFAULT_OPEN,
+    width = DEFAULT_WIDTH,
+    tab
+  } = sidePanel;
+
+  const { headers, tabs } = useMemo(() => {
+    const headers = [];
+    const tabs = [];
+
+    React.Children.forEach(children, child => {
+      if (!child) {
+        return;
+      }
+
+      if (child.type === Header) {
+        headers.push(child);
+      } else if (child.type === Tab) {
+        tabs.push({
+          id: child.props.id,
+          label: child.props.label,
+          icon: child.props.icon,
+          content: child.props.children
+        });
+      }
+    });
+
+    return { headers, tabs };
+  }, [ children ]);
+
+  const showTabs = tabs.length > 1;
+
+  const activeTabId = showTabs
+    ? (tabs.some(t => t.id === tab) ? tab : tabs[0]?.id)
+    : tabs[0]?.id;
+
+  useEffect(() => {
+    if (activeTabId && tab !== undefined && activeTabId !== tab) {
+      onLayoutChanged({
+        sidePanel: {
+          ...DEFAULT_LAYOUT,
+          ...sidePanel,
+          tab: activeTabId
+        }
+      });
+    }
+  }, [ activeTabId, tab, onLayoutChanged, sidePanel ]);
+
+  useEffect(() => {
+    if (open && effectiveMaxWidth > 0 && width > effectiveMaxWidth) {
+      onLayoutChanged({
+        sidePanel: {
+          ...DEFAULT_LAYOUT,
+          ...sidePanel,
+          width: effectiveMaxWidth
+        }
+      });
+    }
+  }, [ effectiveMaxWidth, width, open ]);
+
+  const onResized = useCallback(({ open, width }) => {
+    onLayoutChanged({
+      sidePanel: {
+        ...DEFAULT_LAYOUT,
+        ...sidePanel,
+        tab: activeTabId,
+        open,
+        width
+      }
+    });
+  }, [ activeTabId, onLayoutChanged, sidePanel ]);
+
+  const onTabClick = useCallback((tabId) => {
+    if (tab === tabId && open) {
+      return;
+    }
+
+    onLayoutChanged({
+      sidePanel: {
+        ...DEFAULT_LAYOUT,
+        ...sidePanel,
+        open: true,
+        tab: tabId
+      }
+    });
+  }, [ onLayoutChanged, sidePanel, tab, open ]);
+
+  const panels = tabs.map(({ id: tabId, content }) => {
+    const className = classNames('side-panel__content', {
+      'side-panel__content--active': activeTabId === tabId
+    });
+
+    // keep inactive panels mounted, so their editors keep their state;
+    // no tab stop of their own, focus goes to the fields inside
+    return showTabs
+      ? <TabsContent key={ tabId } value={ tabId } forceMount tabIndex={ -1 } className={ className }>{ content }</TabsContent>
+      : <div key={ tabId } className={ className }>{ content }</div>;
+  });
+
+  const body = <div className="side-panel__body">{ panels }</div>;
+
+  return (
+    <div ref={ containerRef } style={ { display: 'contents' } }>
+      <ResizableContainer
+        className={ classNames(css.SidePanel, 'side-panel') }
+        direction="left"
+        open={ open }
+        width={ width }
+        minWidth={ MIN_WIDTH }
+        maxWidth={ effectiveMaxWidth }
+        onResized={ onResized }
+      >
+        { headers }
+
+        { showTabs ? (
+          <Tabs className="side-panel__tabs" value={ activeTabId } onValueChange={ onTabClick }>
+            <div className="side-panel__tabs-bar">
+              <TabsList variant="line">
+                { tabs.map(({ id: tabId, label, icon: Icon }) => (
+                  <TabsTrigger
+                    key={ tabId }
+                    value={ tabId }
+                    className={ classNames('side-panel__tab', {
+                      'side-panel__tab--active': activeTabId === tabId
+                    }) }
+                  >
+                    { Icon && <Icon className="side-panel__tab-icon" aria-hidden="true" /> }
+                    <span>{ label }</span>
+                  </TabsTrigger>
+                )) }
+              </TabsList>
+            </div>
+            { body }
+          </Tabs>
+        ) : body }
+      </ResizableContainer>
+    </div>
+  );
+}
+
+
+function Header({ children }) {
+  return children;
+}
+
+function Tab() {
+  return null;
+}
+
+SidePanel.Header = Header;
+SidePanel.Tab = Tab;

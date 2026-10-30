@@ -1,0 +1,75 @@
+:local(.OverviewContainer) {
+  margin: 0 10px 10px 10px;
+  position: relative;
+
+  background-color: var(--neutral-background-subtle);
+  border: solid 1px var(--border);
+  border-radius: var(--radius);
+
+  &:not(.open) {
+    width: 0;
+    visibility: hidden;
+    margin-right: 0;
+  }
+
+  .resize-handle {
+    cursor: ew-resize;
+    z-index: 11;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -3px;
+    width: 6px;
+    user-select: none;
+  }
+
+  .toggle {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 11;
+  }
+
+  .overview-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+
+    overflow: hidden;
+
+    .dmn-drd-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+
+      .djs-element {
+        .djs-outline {
+          display: none;
+        }
+
+        &.open,
+        &.can-open:hover {
+          .djs-visual {
+            rect, path {
+              stroke: var(--accent-border-strong) !important;
+              fill: var(--accent-background-subtle) !important;
+            }
+
+            text {
+              fill: var(--accent-foreground-strong) !important;
+            }
+          }
+        }
+      }
+
+      .djs-overlay {
+        pointer-events: none;
+        .drill-down-overlay {
+          color: var(--foreground);
+          background: transparent;
+        }
+      }
+    }
+  }
+
+}

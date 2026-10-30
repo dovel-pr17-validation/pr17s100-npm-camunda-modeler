@@ -1,0 +1,270 @@
+:root {
+  --tab-max-width: 220px;
+  --tab-bar-background-color: var(--app-bar-background-color);
+  --tab-bar-border-color: var(--app-bar-border-color);
+  --tabs-container-background-color: var(--app-bar-background-color);
+  --tab-font-color: var(--neutral-foreground-subtle);
+  --tab-font-size: var(--text-sm);
+  --tab-icon-color: var(--neutral-foreground-subtle);
+  --tab-border-right-color: var(--app-bar-border-color);
+  --tab-close-background-color: transparent;
+  --tab-close-hover-background-color: var(--app-bar-item-active-background-color);
+  --tab-close-icon-fill-color: var(--neutral-foreground-strong);
+  --tab-dirty-marker-background-color: var(--color-sky-500);
+  --tab-dirty-marker-border-color: var(--color-sky-600);
+  --tab-hover-background-color: var(--app-bar-item-hover-background-color);
+  --tab-active-background-color: var(--app-bar-item-background-color);
+  --tab-active-font-color: var(--foreground);
+  --tab-action-icon-color: var(--neutral-foreground-subtle);
+  --tab-action-hover-background-color: var(--app-bar-item-hover-background-color);
+  --tab-action-active-background-color: var(--app-bar-item-active-background-color);
+  --tab-action-active-icon-color: var(--neutral-foreground-strong);
+}
+
+:local(.TabContainer) {
+  position: relative;
+
+  display: flex;
+  flex: 1;
+
+  &.tab {
+    position: relative;
+    flex: 1;
+  }
+}
+
+:local(.LinksContainer) {
+  display: flex;
+  justify-content: space-between;
+
+  position: relative;
+  z-index: 100;
+
+  flex: none;
+  height: 36px;
+  background: var(--tab-bar-background-color);
+  border-bottom: 1px solid var(--tab-bar-border-color);
+
+  .tabs-container {
+    flex-grow: 1;
+    display: flex;
+    margin-right: 40px;
+
+    white-space: nowrap;
+    background-color: var(--tabs-container-background-color);
+  }
+
+  .tab-trailing {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 4px;
+    padding-inline: 4px;
+
+    .btn--tab-action {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: none;
+      border-radius: var(--radius);
+      color: var(--tab-action-icon-color);
+
+      svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      &:hover {
+        background-color: var(--tab-action-hover-background-color);
+      }
+
+      &:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-shadow);
+      }
+
+      &.btn--active {
+        background-color: var(--tab-action-active-background-color);
+        color: var(--tab-action-active-icon-color);
+      }
+    }
+  }
+
+  .tab {
+    position: relative;
+    flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 20px;
+    max-width: var(--tab-max-width);
+    color: var(--tab-font-color);
+    border-right: 1px solid var(--tab-border-right-color);
+    user-select: none;
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: inset var(--focus-shadow);
+    }
+
+    .tab__content {
+      position: absolute;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .tab__type {
+      pointer-events: all;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      align-self: center;
+      margin: 0 6px;
+      color: var(--tab-icon-color);
+
+      svg {
+        height: 16px;
+        width: 16px;
+      }
+    }
+
+    .tab__name {
+      pointer-events: all;
+      font-size: var(--tab-font-size);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin: 0 28px 0 0;
+    }
+
+    .tab__dirty-marker {
+      pointer-events: all;
+      z-index: 5;
+      content: '';
+      position: absolute;
+      top: 9px;
+      left: 16px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--tab-dirty-marker-background-color);
+      border: 1px solid var(--tab-dirty-marker-border-color);
+      box-sizing: content-box;
+      box-shadow: 0 0 0 2px var(--tab-dirty-marker-ring-color, var(--tab-bar-background-color));
+    }
+
+    .tab__close {
+      position: absolute;
+      pointer-events: all;
+      right: 6px;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      width: 20px;
+      height: 20px;
+      border: none;
+      border-radius: var(--radius);
+      background-color: var(--tab-close-background-color);
+      color: var(--tab-close-icon-fill-color);
+
+      .tab__icon-close {
+        width: 14px;
+        height: 14px;
+      }
+
+      &:hover {
+        background-color: var(--tab-close-hover-background-color);
+      }
+
+      &:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-shadow);
+      }
+    }
+
+    &.tab--small {
+      &:not(.tab--active) {
+        .tab__name {
+          margin-right: 6px;
+        }
+      }
+    }
+
+    &.tab--smaller {
+      .tab__type {
+        margin: auto;
+      }
+
+      .tab__name {
+        display: none;
+      }
+
+      .tab__dirty-marker {
+        left: calc(50% + 3px);
+      }
+
+      &.tab--active {
+        .tab__close {
+          position: relative;
+          right: 0;
+          margin: auto;
+        }
+
+        .tab__dirty-marker {
+          left: calc(50% + 6px);
+        }
+
+        .tab__type {
+          display: none;
+        }
+      }
+    }
+
+    &.tab--placeholder {
+      font-style: italic;
+
+      .tab__content {
+        padding-left: 12px;
+      }
+    }
+
+    &:not(.tab--active):hover {
+      --tab-dirty-marker-ring-color: var(--tab-hover-background-color);
+
+      background-color: var(--tab-hover-background-color);
+    }
+
+    &.tab--active {
+      --tab-dirty-marker-ring-color: var(--tab-active-background-color);
+
+      color: var(--tab-active-font-color);
+      background-color: var(--tab-active-background-color);
+    }
+
+    &.tab--group:after {
+      z-index: 3;
+      position: absolute;
+      content: '';
+      bottom: -0.5px;
+      left: 0px;
+      right: 0px;
+      height: 2px;
+      background-color: var(--tab-line-group-background-color);
+    }
+  }
+}
+
+:local(.Tab) {
+  position: relative;
+  flex: 1;
+}

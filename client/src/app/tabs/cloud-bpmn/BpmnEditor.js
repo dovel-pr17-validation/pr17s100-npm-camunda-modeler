@@ -1,0 +1,1240 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import React from 'react';
+
+import debug from 'debug';
+
+import { isFunction } from 'min-dash';
+
+import {
+  Loader
+} from '../../primitives';
+
+import {
+  debounce
+} from '../../../util';
+
+import {
+  WithCache,
+  WithCachedState,
+  CachedComponent
+} from '../../cached';
+
+import { EventsContext } from '../../EventsContext';
+
+import { Settings } from '@camunda/design-system/icons';
+
+import SidePanel, { DEFAULT_LAYOUT as SIDE_PANEL_DEFAULT_LAYOUT } from '../../side-panel/SidePanel';
+import SidePanelTitleBar from '../../side-panel/SidePanelTitleBar';
+import PropertiesTab from '../../side-panel/tabs/PropertiesTab';
+import PropertiesPanelTabActionItem from '../../resizable-container/PropertiesPanelTabActionItem';
+import TaskTestingTabActionItem from './side-panel/tabs/task-testing/TaskTestingTabActionItem';
+
+import TaskTestingTab from './side-panel/tabs/task-testing/TaskTestingTab';
+import TaskTestingIcon from '../../../../resources/icons/TaskTesting.svg';
+
+import VariablesSidePanel, { DEFAULT_LAYOUT as VARIABLES_PANEL_DEFAULT_LAYOUT } from './variables-side-panel/VariablesSidePanel';
+import VariablesTabActionItem from './variables-side-panel/VariablesTabActionItem';
+
+import { SidePanelGroup, SidePanelConsumer } from '../../side-panel/SidePanelGroup';
+
+import BpmnModeler from './modeler';
+
+import FeelPlayground from './modeler/features/feel-playground/FeelPlayground';
+import { getFeelPlaygroundConfig } from './modeler/features/feel-playground/FeelPlaygroundConfig';
+import { createFeelPlaygroundPopup } from './modeler/features/feel-playground/FeelPlaygroundPopup';
+
+import { active as isInputActive, isTextInput } from '../../../util/dom/isInput';
+
+import getBpmnContextMenu from '../bpmn/getBpmnContextMenu';
+
+import { getBpmnEditMenu } from '../bpmn/getBpmnEditMenu';
+
+import getBpmnWindowMenu from '../bpmn/getBpmnWindowMenu';
+
+import * as css from './BpmnEditor.css';
+
+import { svgToImage } from '@bpmn-io/svg-to-image';
+
+import applyDefaultTemplates from '../bpmn-shared/modeler/features/apply-default-templates/applyDefaultTemplates';
+
+import configureModeler from '../bpmn-shared/util/configure';
+
+import Metadata from '../../../util/Metadata';
+
+import { GridBehavior } from '../util/grid';
+
+import {
+  EngineProfile,
+  getEngineProfileFromBpmn
+} from '../EngineProfile';
+
+import EngineProfileHelper from '../EngineProfileHelper';
+
+import LintingHelper from '../LintingHelper';
+
+import {
+  ENGINES
+} from '../../../util/Engines';
+
+import { getCloudTemplates } from '../../../util/elementTemplates';
+
+import CredentialManager from './credential-manager/CredentialManager';
+
+const EXPORT_AS = [ 'png', 'jpeg', 'svg' ];
+
+export const DEFAULT_ENGINE_PROFILE = {
+  executionPlatform: ENGINES.CLOUD
+};
+
+const LOW_PRIORITY = 500;
+
+const log = debug('BpmnEditor:cloud');
+
+
+export class BpmnEditor extends CachedComponent {
+
+  static contextType = EventsContext;
+
+  constructor(props) {
+    super(props);
+
+    this.state = {};
+
+    this.ref = React.createRef();
+    this.propertiesPanelRef = React.createRef();
+    this.propertiesPanelHeaderRef = React.createRef();
+
+    this.handleEngineProfileChangeDebounced = debounce(this.handleEngineProfileChange);
+
+    this.engineProfile = new EngineProfileHelper({
+      get: () => {
+        const modeler = this.getModeler();
+
+        const definitions = modeler.getDefinitions();
+
+        return getEngineProfileFromBpmn(definitions, DEFAULT_ENGINE_PROFILE);
+      },
+      set: (engineProfile) => {
+        const modeler = this.getModeler();
+
+        const canvas = modeler.get('canvas'),
+              modeling = modeler.get('modeling');
+
+        const definitions = modeler.getDefinitions();
+
+        const {
+          executionPlatform,
+          executionPlatformVersion
+        } = engineProfile;
+
+        modeling.updateModdleProperties(canvas.getRootElement(), definitions, {
+          'modeler:executionPlatform': executionPlatform,
+          'modeler:executionPlatformVersion': executionPlatformVersion
+        });
+      },
+      getCached: () => this.getCached(),
+      setCached: ({ engineProfile }) => {
+        this.handleEngineProfileChangeDebounced({ engineProfile });
+
+        this.setCached({ engineProfile });
+      },
+      onChanged: (engineProfile) => this.emitEngineProfileChanged(engineProfile)
+    });
+
+    this.gridBehavior = new GridBehavior({
+      getDiagram: () => this.getModeler()
+    });
+
+    this.handleResize = debounce(this.handleResize);
+
+    this.linting = new LintingHelper({
+      lint: () => this.handleLinting(),
+      getCached: () => this.getCached(),
+      setCached: (state) => this.setCached(state)
+    });
+
+    this.handlePropertiesPanelLayoutChange = this.handlePropertiesPanelLayoutChange.bind(this);
+    this.handleLayoutChange = this.handleLayoutChange.bind(this);
+  }
+
+  componentDidMount() {
+    this._isMounted = true;
+
+    const {
+      layout
+    } = this.props;
+
+    const modeler = this.getModeler();
+
+    this.listen('on');
+
+    modeler.attachTo(this.ref.current);
+
+    const minimap = modeler.get('minimap');
+
+    minimap.toggle(layout.minimap?.open === true);
+
+    this.gridBehavior.update(layout);
+
+    const propertiesPanel = modeler.get('propertiesPanel');
+
+    if (layout.propertiesPanel) {
+      propertiesPanel.setLayout(layout.propertiesPanel);
+    }
+
+    propertiesPanel.attachTo(this.propertiesPanelRef.current, this.propertiesPanelHeaderRef.current);
+
+    this.checkImport();
+
+    this.linting.resume();
+  }
+
+  componentWillUnmount() {
+    this._isMounted = false;
+
+    this.linting.cancel();
+
+    const modeler = this.getModeler();
+
+    this.listen('off');
+
+    modeler.detach();
+
+    const propertiesPanel = modeler.get('propertiesPanel');
+
+    propertiesPanel.detach();
+  }
+
+  componentDidUpdate(prevProps) {
+    this.checkImport(prevProps);
+
+    if (isCacheStateChanged(prevProps, this.props)) {
+      this.handleChanged();
+    }
+
+    if (prevProps.linting !== this.props.linting) {
+      const { lastXML } = this.getCached();
+
+      if (lastXML && !this.state.importing) {
+        this.getModeler().get('linting').setErrors(this.props.linting || []);
+      }
+    }
+
+    if (prevProps.file?.path !== this.props.file?.path) {
+      this.loadTemplates();
+
+      this.getCached().feelPlayground.setFile(this.props.file);
+    }
+
+    const { layout = {} } = this.props;
+
+    const { panel = {} } = layout;
+
+    // only toggle linting once the diagram is imported; activating or
+    // deactivating while (re-)importing would access the not yet imported
+    // root element and crash (cf. #6049)
+    const { lastXML } = this.getCached();
+
+    if (lastXML && !this.state.importing && !this.isImportNeeded(prevProps)) {
+      const linting = this.getModeler().get('linting');
+
+      if (panel.open && panel.tab === 'linting') {
+        linting.activate();
+      } else {
+        linting.deactivate();
+      }
+    }
+
+    if (isPropertiesPanelLayoutChanged(prevProps, this.props)) {
+      const modeler = this.getModeler();
+      const propertiesPanel = modeler.get('propertiesPanel');
+
+      propertiesPanel.setLayout(this.props.layout.propertiesPanel);
+    }
+
+    this.gridBehavior.checkUpdate(prevProps.layout, layout);
+  }
+
+  listen(fn) {
+    const modeler = this.getModeler();
+
+    modeler[fn]('attach', this.handleAttach);
+
+    [
+      'import.done',
+      'saveXML.done',
+      'commandStack.changed',
+      'selection.changed',
+      'attach',
+      'elements.copied',
+      'propertiesPanel.focusin',
+      'propertiesPanel.focusout',
+      'variablesPanel.focusin',
+      'variablesPanel.focusout',
+      'canvas.focus.changed'
+    ].forEach((event) => {
+      modeler[fn](event, this.handleChanged);
+    });
+
+    modeler[fn]('propertiesPanel.showEntry', this.handleShowEntry);
+
+    modeler[fn]('elementTemplates.errors', this.handleElementTemplateErrors);
+
+    modeler[fn]('elementTemplates.changed', this.handleElementTemplatesChanged);
+
+    modeler[fn]('error', 1500, this.handleError);
+
+    modeler[fn]('minimap.toggle', this.handleMinimapToggle);
+
+    modeler[fn]('propertiesPanel.layoutChanged', this.handlePropertiesPanelLayoutChange);
+
+    if (fn === 'on') {
+      this._connectionStatusSubscription = this.context.subscribe(
+        'connectionManager.connectionStatusChanged',
+        this.handleConnectionStatusChanged
+      );
+
+      modeler[ fn ]('commandStack.changed', LOW_PRIORITY, this.linting.schedule);
+    } else {
+      this._connectionStatusSubscription?.cancel();
+      this._connectionStatusSubscription = null;
+
+      modeler[ fn ]('commandStack.changed', this.linting.schedule);
+    }
+
+    // reload templates on focus to pick up external edits to local template
+    // files made while the app was away. The editor owns this decision, not
+    // the app. Cheap: loadTemplates skips re-setting unchanged templates.
+    if (fn === 'on') {
+      this._appFocusedSubscription = this.context.subscribe('app.focused', this.handleAppFocused);
+    } else {
+      this._appFocusedSubscription?.cancel();
+    }
+  }
+
+  handlePropertiesPanelLayoutChange(e) {
+    this.handleLayoutChange({
+      propertiesPanel: e.layout
+    });
+  }
+
+  emitEngineProfileChanged = (engineProfile) => {
+    const {
+      executionPlatform,
+      executionPlatformVersion
+    } = engineProfile;
+
+    this.props.emit('tab.engineProfileChanged', {
+      executionPlatform,
+      executionPlatformVersion
+    });
+  };
+
+  handleEngineProfileChange = ({ engineProfile }) => {
+    const { executionPlatformVersion: version } = engineProfile;
+
+    if (!version) {
+      return;
+    }
+
+    const modeler = this.getModeler();
+    const elementTemplates = modeler.get('elementTemplates');
+
+    const engines = {
+      ...elementTemplates.getEngines(),
+      camunda: version
+    };
+
+    elementTemplates.setEngines(engines);
+
+    modeler.get('propertiesPanel').setFeelLanguageContext({
+      engines: {
+        camunda: version
+      }
+    });
+  };
+
+  handleAppFocused = () => {
+    this.loadTemplates().catch(error => this.handleError({ error }));
+  };
+
+  handleConnectionStatusChanged = (connectionStatus) => {
+    this.getCached().feelPlayground.setConfig(
+      getFeelPlaygroundConfig(connectionStatus, this.props.zeebeApi)
+    );
+  };
+
+  async loadTemplates() {
+    const {
+      getConfig,
+      tab
+    } = this.props;
+
+    const modeler = this.getModeler();
+
+    const templatesLoader = modeler.get('elementTemplatesLoader');
+
+    const templates = getCloudTemplates(await getConfig('bpmn.elementTemplates'));
+
+    // skip (re-)setting identical templates: setting them re-validates every
+    // template and invalidates the linter. A (re-)load only warrants that work
+    // when the fetched templates actually changed (e.g. edited locally). The
+    // key lives in the (tab-scoped) cache so it survives editor remounts, i.e.
+    // switching away and back to the tab does not re-set unchanged templates.
+    const templatesKey = JSON.stringify(templates);
+
+    if (templatesKey === this.getCached().templatesKey) {
+      log('skip re-setting - element templates unchanged', { tabId: tab?.id, path: this.props.file?.path });
+
+      return;
+    }
+
+    this.setCached({ templatesKey });
+
+    log('setting element templates', { tabId: tab?.id, path: this.props.file?.path });
+
+    templatesLoader.setTemplates(templates);
+
+    log('element templates set', { tabId: tab?.id, path: this.props.file?.path });
+  }
+
+  undo = () => {
+    const modeler = this.getModeler();
+
+    modeler.get('commandStack').undo();
+  };
+
+  redo = () => {
+    const modeler = this.getModeler();
+
+    modeler.get('commandStack').redo();
+  };
+
+  handleAlignElements = (type) => {
+    this.triggerAction('alignElements', {
+      type
+    });
+  };
+
+  handleMinimapToggle = (event) => {
+    this.handleLayoutChange({
+      minimap: {
+        open: event.open
+      }
+    });
+  };
+
+  handleElementTemplateErrors = (event) => {
+    const {
+      onWarning
+    } = this.props;
+
+    const {
+      errors
+    } = event;
+
+    errors.forEach(error => {
+      onWarning({ message: error.message });
+    });
+  };
+
+  /**
+   * React to the modeler's element templates changing - e.g. after
+   * (re-)loading them. Templates are a linting input, so we let the app
+   * invalidate the (cached) linter for this tab and then re-lint through our
+   * own debounced path - coalescing with any concurrent modeling changes.
+   */
+  handleElementTemplatesChanged = () => {
+    log('element templates changed', { path: this.props.file?.path });
+
+    this.props.onAction('element-templates-changed');
+
+    this.linting.schedule();
+  };
+
+  handleAttach = (event) => {
+    const modeler = this.getModeler();
+
+    modeler.get('canvas').focus();
+  };
+
+  handleError = (event) => {
+    const {
+      error
+    } = event;
+
+    const {
+      onError
+    } = this.props;
+
+    onError(error);
+  };
+
+  handleImport = async (error, warnings) => {
+    const {
+      isNew,
+      onImport,
+      xml
+    } = this.props;
+
+    let {
+      defaultTemplatesApplied
+    } = this.getCached();
+
+    const modeler = this.getModeler();
+
+    const commandStack = modeler.get('commandStack');
+
+    const stackIdx = commandStack._stackIdx;
+
+    let engineProfile = null;
+
+    if (!error) {
+      try {
+        engineProfile = this.engineProfile.get(true);
+      } catch (err) {
+        error = err;
+      }
+    }
+
+    if (!error) {
+      try {
+
+        // load the element templates now that the diagram is imported, so they
+        // are validated once - against the imported diagram - rather than on
+        // mount (before the document, and its execution platform, are known)
+        await this.loadTemplates();
+      } catch (err) {
+        error = err;
+      }
+    }
+
+    if (!error && isNew && !defaultTemplatesApplied) {
+      try {
+        modeler.invoke(applyDefaultTemplates);
+
+        defaultTemplatesApplied = true;
+      } catch (err) {
+        error = err;
+      }
+    }
+
+    if (error) {
+      this.setCached({
+        defaultTemplatesApplied: false,
+        engineProfile: null,
+        lastXML: null
+      });
+    } else {
+      this.setCached({
+        defaultTemplatesApplied,
+        lastXML: xml,
+        stackIdx
+      });
+
+      if (engineProfile) {
+        this.engineProfile.setCached(engineProfile);
+      }
+    }
+
+    if (!error) {
+      this.linting.schedule();
+    }
+
+    this.setState({
+      importing: false
+    });
+
+    onImport(error, warnings);
+  };
+
+  handleChanged = () => {
+    const modeler = this.getModeler();
+
+    const {
+      onChanged
+    } = this.props;
+
+    const dirty = this.isDirty();
+
+    const commandStack = modeler.get('commandStack');
+    const selection = modeler.get('selection');
+
+    const selectionLength = selection.get().length;
+    const selectionIncludesShapes = selection.get().some(el => !el.waypoints);
+
+    const inputActive = isInputActive();
+
+    const canvasFocused = modeler.get('canvas').isFocused();
+
+    const newState = {
+      align: selectionLength > 1,
+      appendElement: canvasFocused,
+      canvasFocused,
+      close: true,
+      copy: selectionIncludesShapes,
+      copyAsImage: selectionIncludesShapes,
+      cut: selectionIncludesShapes,
+      duplicate: canvasFocused && selectionIncludesShapes,
+      createElement: canvasFocused,
+      defaultCopyCutPaste: !canvasFocused,
+      defaultUndoRedo: !canvasFocused,
+      dirty,
+      distribute: selectionLength > 2,
+      editLabel: canvasFocused && selectionLength === 1,
+      exportAs: EXPORT_AS,
+      find: canvasFocused,
+      globalConnectTool: canvasFocused,
+      handTool: canvasFocused,
+      inputActive,
+      lassoTool: canvasFocused,
+      moveCanvas: canvasFocused,
+      moveToOrigin: canvasFocused,
+      moveSelection: canvasFocused && !!selectionLength,
+      paste: true,
+      platform: 'cloud',
+      propertiesPanel: true,
+      variablesPanel: true,
+      grid: this.gridBehavior.hasGrid(),
+      redo: canvasFocused && commandStack.canRedo(),
+      removeSelected: canvasFocused && !!selectionLength,
+      replaceElement: canvasFocused && selectionLength == 1,
+      save: true,
+      selectAll: canvasFocused || inputActive,
+      setColor: !!selectionLength,
+      spaceTool: canvasFocused,
+      undo: canvasFocused && commandStack.canUndo(),
+      zoom: true
+    };
+
+    // ensure backwards compatibility
+    // https://github.com/camunda/camunda-modeler/commit/78357e3ed9e6e0255ac8225fbdf451a90457e8bf#diff-bd5be70c4e5eadf1a316c16085a72f0fL17
+    newState.bpmn = true;
+    newState.editable = true;
+    newState.elementsSelected = !!selectionLength;
+    newState.inactiveInput = !inputActive;
+
+    const contextMenu = getBpmnContextMenu(newState);
+
+    const editMenu = getBpmnEditMenu(newState);
+
+    const windowMenu = getBpmnWindowMenu(newState);
+
+    if (isFunction(onChanged)) {
+      onChanged({
+        ...newState,
+        contextMenu,
+        editMenu,
+        windowMenu
+      });
+    }
+
+    this.setState(newState);
+
+    try {
+      const engineProfile = this.engineProfile.get();
+
+      this.engineProfile.setCached(engineProfile);
+    } catch (err) {
+
+      // TODO
+    }
+  };
+
+  handleLinting = (engineProfileOverride) => {
+    const {
+      engineProfile: cachedEngineProfile,
+      modeler
+    } = this.getCached();
+
+    const engineProfile = engineProfileOverride || cachedEngineProfile;
+
+    if (!engineProfile) {
+      return;
+    }
+
+    const contents = modeler.getDefinitions();
+
+    const { onAction } = this.props;
+
+    onAction('lint-tab', { contents });
+  };
+
+  isLintingActive = () => {
+    return this.getModeler().get('linting').isActive();
+  };
+
+  isDirty() {
+    const {
+      modeler,
+      stackIdx
+    } = this.getCached();
+
+    const commandStack = modeler.get('commandStack');
+
+    return commandStack._stackIdx !== stackIdx;
+  }
+
+  checkImport(prevProps) {
+    if (!this.isImportNeeded(prevProps)) {
+      return;
+    }
+
+    const { xml } = this.props;
+
+    this.importXML(xml);
+  }
+
+  isImportNeeded(prevProps) {
+    const {
+      importing
+    } = this.state;
+
+    if (importing) {
+      return false;
+    }
+
+    const {
+      xml
+    } = this.props;
+
+    if (prevProps && prevProps.xml === xml) {
+      return false;
+    }
+
+    const {
+      lastXML
+    } = this.getCached();
+
+    return xml !== lastXML;
+  }
+
+  async importXML(xml) {
+    this.setState({
+      importing: true
+    });
+
+    const modeler = this.getModeler();
+
+    let error = null, warnings = null;
+    try {
+
+      const result = await modeler.importXML(xml);
+      warnings = result.warnings;
+    } catch (err) {
+
+      error = err;
+      warnings = err.warnings;
+    }
+
+    if (this._isMounted) {
+      this.handleImport(error, warnings);
+    }
+  }
+
+  /**
+   * @returns {BpmnModeler}
+   */
+  getModeler() {
+    const {
+      modeler
+    } = this.getCached();
+
+    return modeler;
+  }
+
+  async getXML() {
+    const {
+      lastXML,
+      modeler
+    } = this.getCached();
+
+    const commandStack = modeler.get('commandStack');
+
+    if (!this.isDirty()) {
+      return lastXML || this.props.xml;
+    }
+
+    try {
+      const { xml } = await modeler.saveXML({ format: true });
+
+      const stackIdx = commandStack._stackIdx;
+
+      this.setCached({ lastXML: xml, stackIdx });
+
+      return xml;
+    } catch (error) {
+      this.handleError({ error });
+
+      return Promise.reject(error);
+    }
+  }
+
+  async exportAs(type) {
+    let svg;
+
+    try {
+      svg = await this.exportSVG();
+    } catch (error) {
+      this.handleError({ error });
+
+      return Promise.reject(error);
+    }
+
+    if (type === 'svg') {
+      return svg;
+    }
+
+    return svgToImage(svg, { imageType: type, outputFormat: 'dataUrl' });
+  }
+
+  async exportSVG() {
+    const modeler = this.getModeler();
+
+    try {
+      const { svg } = await modeler.saveSVG();
+
+      return svg;
+    } catch (err) {
+
+      return Promise.reject(err);
+    }
+  }
+
+  triggerAction = (action, context = {}) => {
+    const {
+      layout = {}
+    } = this.props;
+
+    const modeler = this.getModeler();
+
+    if (action === 'resize') {
+      return this.handleResize();
+    }
+
+    if (action === 'toggleGrid') {
+      return this.gridBehavior.toggleGrid(layout, this.handleLayoutChange);
+    }
+
+    if (action === 'toggleProperties') {
+      let { sidePanel: sidePanelLayout = SIDE_PANEL_DEFAULT_LAYOUT } = layout;
+
+      sidePanelLayout = { ...SIDE_PANEL_DEFAULT_LAYOUT, ...sidePanelLayout };
+
+      const newLayout = {
+        sidePanel: {
+          ...sidePanelLayout,
+          open: sidePanelLayout.tab === 'properties' ? !sidePanelLayout.open : true,
+          tab: 'properties'
+        }
+      };
+
+      return this.handleLayoutChange(newLayout);
+    }
+
+    if (action === 'toggleVariables') {
+      let { variablesSidePanel: variablesSidePanelLayout = VARIABLES_PANEL_DEFAULT_LAYOUT } = layout;
+
+      variablesSidePanelLayout = { ...VARIABLES_PANEL_DEFAULT_LAYOUT, ...variablesSidePanelLayout };
+
+      const newLayout = {
+        variablesSidePanel: {
+          ...VARIABLES_PANEL_DEFAULT_LAYOUT,
+          ...variablesSidePanelLayout,
+          open: !variablesSidePanelLayout.open
+        }
+      };
+
+      return this.handleLayoutChange(newLayout);
+    }
+
+    if (action === 'zoomIn') {
+      action = 'stepZoom';
+
+      context = {
+        value: 1
+      };
+    }
+
+    if (action === 'zoomOut') {
+      action = 'stepZoom';
+
+      context = {
+        value: -1
+      };
+    }
+
+    if (action === 'resetZoom') {
+      action = 'zoom';
+
+      context = {
+        value: 1
+      };
+    }
+
+    if (action === 'zoomFit') {
+      action = 'zoom';
+
+      context = {
+        value: 'fit-viewport'
+      };
+    }
+
+    if (action === 'showLintError') {
+      this.getModeler().get('linting').showError(context);
+
+      return;
+    }
+
+    if (action === 'set-engine-profile') {
+      const currentProfile = this.engineProfile.get();
+
+      return this.engineProfile.set({
+        executionPlatform: currentProfile.executionPlatform,
+        executionPlatformVersion: context.executionPlatformVersion
+      });
+    }
+
+    if (action === 'elementTemplates.reload') {
+      return this.loadTemplates();
+    }
+
+    if (action === 'resources.reload') {
+      return modeler.get('resources.resourceLoader').reload();
+    }
+
+    // TODO(nikku): handle all editor actions
+    return modeler.get('editorActions').trigger(action, context);
+  };
+
+  handleShowEntry = (event) => {
+    const { layout = {} } = this.props;
+
+    let { sidePanel: sidePanelLayout = SIDE_PANEL_DEFAULT_LAYOUT } = layout;
+
+    sidePanelLayout = { ...SIDE_PANEL_DEFAULT_LAYOUT, ...sidePanelLayout };
+
+    if (sidePanelLayout.tab === 'properties' && sidePanelLayout.open) {
+      return;
+    }
+
+    this.handleLayoutChange({
+      sidePanel: {
+        ...sidePanelLayout,
+        open: true,
+        tab: 'properties'
+      }
+    });
+  };
+
+  handleSetColor = (fill, stroke) => {
+    this.triggerAction('setColor', {
+      fill,
+      stroke
+    });
+  };
+
+  handleDistributeElements = (type) => {
+    this.triggerAction('distributeElements', {
+      type
+    });
+  };
+
+  handleContextMenu = (event) => {
+
+    // allow default context menu for text inputs,
+    // e.g. FEEL popup or direct editing
+    if (isTextInput(event.target)) {
+      return;
+    }
+
+    const {
+      onContextMenu
+    } = this.props;
+
+    if (isFunction(onContextMenu)) {
+      onContextMenu(event);
+    }
+  };
+
+  handleLayoutChange(newLayout) {
+    const {
+      onLayoutChanged
+    } = this.props;
+
+    if (isFunction(onLayoutChanged)) {
+      onLayoutChanged(newLayout);
+    }
+  }
+
+  handleResize = () => {
+    const modeler = this.getModeler();
+
+    const canvas = modeler.get('canvas');
+    const eventBus = modeler.get('eventBus');
+
+    canvas.resized();
+    eventBus.fire('propertiesPanel.resized');
+  };
+
+  render() {
+    const engineProfile = this.engineProfile.getCached();
+
+    const {
+      config,
+      deployment,
+      file,
+      layout,
+      linting,
+      onAction,
+      startInstance,
+      tabId,
+      zeebeApi
+    } = this.props;
+
+    const modeler = this.getModeler();
+    const imported = modeler.getDefinitions();
+    const injector = modeler.get('injector');
+
+    const {
+      importing
+    } = this.state;
+
+    return (
+      <div className={ css.BpmnEditor }>
+
+        <Loader hidden={ imported && !importing } />
+        <div className="editor">
+          <div
+            className="diagram"
+            ref={ this.ref }
+            onFocus={ this.handleChanged }
+            onContextMenu={ this.handleContextMenu }
+          ></div>
+
+          <SidePanelGroup panelIds={ [ 'variablesSidePanel', 'sidePanel' ] } layout={ layout } onLayoutChanged={ this.handleLayoutChange }>
+            <SidePanelConsumer panelId="variablesSidePanel">
+              { ({ maxWidth, onLayoutChanged }) => (
+                <VariablesSidePanel
+                  injector={ injector }
+                  layout={ layout }
+                  maxWidth={ maxWidth }
+                  onAction={ onAction }
+                  onLayoutChanged={ onLayoutChanged }
+                />
+              ) }
+            </SidePanelConsumer>
+
+            <SidePanelConsumer panelId="sidePanel">
+              { ({ maxWidth, onLayoutChanged }) => (
+                <SidePanel
+                  layout={ layout }
+                  maxWidth={ maxWidth }
+                  onLayoutChanged={ onLayoutChanged }
+                >
+                  <SidePanel.Header>
+                    <SidePanelTitleBar
+                      title="Details"
+                      onClose={ () => this.handleLayoutChange({
+                        sidePanel: {
+                          ...SIDE_PANEL_DEFAULT_LAYOUT,
+                          ...layout.sidePanel,
+                          open: false
+                        }
+                      }) }
+                    />
+                  </SidePanel.Header>
+                  <SidePanel.Header>
+                    <div className="properties-panel-header-container" ref={ this.propertiesPanelHeaderRef } />
+                  </SidePanel.Header>
+                  <SidePanel.Tab id="properties" label="Properties" icon={ Settings }>
+                    <PropertiesTab propertiesPanelRef={ this.propertiesPanelRef } />
+                  </SidePanel.Tab>
+                  <SidePanel.Tab id="test" label="Test" icon={ TaskTestingIcon }>
+                    <TaskTestingTab
+                      config={ config }
+                      deployment={ deployment }
+                      file={ file }
+                      tabId={ tabId }
+                      injector={ injector }
+                      layout={ layout }
+                      linting={ linting }
+                      onAction={ onAction }
+                      startInstance={ startInstance }
+                      zeebeApi={ zeebeApi }
+                    />
+                  </SidePanel.Tab>
+                </SidePanel>
+              ) }
+            </SidePanelConsumer>
+          </SidePanelGroup>
+
+          <VariablesTabActionItem
+            layout={ layout }
+            onLayoutChanged={ this.handleLayoutChange }
+          />
+
+
+
+          <PropertiesPanelTabActionItem
+            layout={ layout }
+            onLayoutChanged={ this.handleLayoutChange }
+          />
+          <TaskTestingTabActionItem
+            layout={ layout }
+            onLayoutChanged={ this.handleLayoutChange }
+          />
+        </div>
+
+        { engineProfile && <EngineProfile
+          type="bpmn"
+          engineProfile={ engineProfile }
+          onChange={ (engineProfile) => this.engineProfile.set(engineProfile) } />
+        }
+
+        <CredentialManager
+          injector={ injector }
+          zeebeApi={ zeebeApi }
+          deployment={ deployment }
+          file={ file }
+          tabId={ tabId }
+          onError={ this.handleError }
+        />
+      </div>
+    );
+  }
+
+  static createCachedState(props) {
+
+    const {
+      name,
+      version
+    } = Metadata;
+
+    const {
+      getPlugins,
+      emit,
+      onError,
+      layout = {},
+      settings
+    } = props;
+
+    // notify interested parties that modeler will be configured
+    const handleMiddlewareExtensions = (middlewares) => {
+      emit('bpmn.modeler.configure', {
+        middlewares
+      });
+    };
+
+    const {
+      options,
+      warnings
+    } = configureModeler(getPlugins, {
+      exporter: {
+        name,
+        version
+      },
+      settings
+    }, handleMiddlewareExtensions, 'cloud');
+
+    if (warnings.length && isFunction(onError)) {
+      onError(
+        'Problem(s) configuring BPMN editor: \n\t' +
+        warnings.map(error => error.message).join('\n\t') +
+        '\n'
+      );
+    }
+
+    const feelPlayground = new FeelPlayground(props.config);
+
+    const modeler = new BpmnModeler({
+      ...options,
+      position: 'absolute',
+      changeTemplateCommand: 'propertiesPanel.zeebe.changeTemplate',
+      linting: {
+        active: layout.panel && layout.panel.open && layout.panel.tab === 'linting'
+      },
+      propertiesPanel: {
+        feelTooltipContainer: '.editor',
+        feelPopupContainer: '.bjs-container',
+        layout: layout.propertiesPanel
+      },
+      keyboard: {
+        bind: false
+      },
+      elementTemplates: {
+        engines: {
+          camundaDesktopModeler: version
+        }
+      }
+    });
+
+    modeler.get('feelPopup').registerProvider(
+      'feel',
+      createFeelPlaygroundPopup(feelPlayground)
+    );
+
+    feelPlayground.setFile(props.file);
+
+    modeler.on('elementTemplates.errors', (event) => {
+      console.warn('Element templates errors', event.errors);
+    });
+
+    const commandStack = modeler.get('commandStack');
+
+    const stackIdx = commandStack._stackIdx;
+
+    // notify interested parties that modeler was created
+    emit('bpmn.modeler.created', {
+      modeler
+    });
+
+    return {
+      __destroy: () => {
+        feelPlayground.saveContexts();
+        modeler.destroy();
+      },
+      engineProfile: null,
+      feelPlayground,
+      lastXML: null,
+      modeler,
+      stackIdx,
+      templatesLoaded: false
+    };
+  }
+
+}
+
+
+export default WithCache(WithCachedState(BpmnEditor));
+
+// helpers //////////
+
+function isCacheStateChanged(prevProps, props) {
+  return prevProps.cachedState !== props.cachedState;
+}
+
+function isPropertiesPanelLayoutChanged(prevProps, props) {
+
+  // same Object
+  if (props.layout === prevProps.layout) {
+    return false;
+  }
+
+  // deleted in one of the two
+  if (!props.layout || !prevProps.layout) {
+    return true;
+  }
+
+  // check JSON equality
+  return JSON.stringify(prevProps.layout.propertiesPanel) !== JSON.stringify(props.layout.propertiesPanel);
+}

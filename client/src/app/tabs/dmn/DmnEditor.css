@@ -1,0 +1,42 @@
+:local(.DmnEditor) {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+
+  flex-direction: column;
+
+  background-color: var(--app-content-background-color);
+
+  :not(.top) + .bottom {
+    .dmn-decision-table-container,
+    .dmn-literal-expression-container {
+      display: none;
+    }
+  }
+
+  &>.top {
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  &>.bottom {
+    display: flex;
+    flex: 1;
+    flex-direction: row;
+  }
+
+  .diagram {
+    flex: 1;
+    position: relative;
+  }
+
+  .diagram:not(.drd) {
+    margin-right: 10px;
+    margin-bottom: 10px;
+  }
+
+  .djs-container > .dmn-definitions {
+    display: none;
+  }
+}

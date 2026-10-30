@@ -1,0 +1,29 @@
+:local(.DropZone) {
+  height: 100%;
+  width: 100%;
+}
+
+:local(.DropOverlay) {
+  position: fixed;
+  inset: 0;
+
+  padding: 64px 48px;
+
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+
+  pointer-events: none;
+
+  z-index: 1000;
+
+  .box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    border: 2px dashed var(--accent-border-strong);
+    border-radius: calc(var(--radius) + 8px);
+    background-color: var(--accent-background-subtle);
+    font-size: var(--text-xl);
+    color: var(--accent-foreground-strong);
+  }
+}

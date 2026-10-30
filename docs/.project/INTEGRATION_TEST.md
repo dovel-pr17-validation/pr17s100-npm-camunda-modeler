@@ -1,0 +1,214 @@
+> __Note:__ If possible, execute the integration test on our [released artifacts](https://github.com/camunda/camunda-modeler/releases).
+
+# Integration Test
+
+We use a number of pre-defined steps to ensure the stability of our releases through integration tests.
+
+__Target:__ Perform tests on nightly builds on supported platforms.
+
+### Test Procedure
+
+* [ ] fetch [the release](https://github.com/camunda/camunda-modeler/releases)
+* [ ] fetch [latest version of A11y-checker plugin](https://github.com/bpmn-io/camunda-modeler-plugin-a11y-checker)
+* [ ] test changes of the release from the users' perspective end-2-end (e.g., include deployment where appropriate) (see [release issue](https://github.com/camunda/camunda-modeler/labels/release) and [changelog](https://github.com/camunda/camunda-modeler/blob/develop/CHANGELOG.md))
+* [ ] click like crazy (see [below](#test-checklist))
+
+### Test Checklist
+
+Manual integration tests:
+
+#### BPMN Modeling
+
+* [ ] create a new BPMN diagram
+* [ ] build [this diagram](./test.bpmn.png) from scratch
+* [ ] save file on disk as `test.bpmn`
+* [ ] save file with other file name on disk
+* [ ] export as SVG
+* [ ] export as PNG
+* [ ] export as JPG
+* [ ] SVG, PNG and JPG exports open in browser
+
+##### Copy/Paste
+
+* [ ] create a new diagram
+* [ ] `CTRL + A` + `CTRL + C` in previously created diagram
+* [ ] remove start event in empty diagram
+* [ ] `CTRL + V` in empty diagram pastes all contents
+
+##### BPMN properties panel
+
+* [ ] configure service task in properties panel
+* [ ] add execution listener
+* [ ] add input mapping
+* [ ] add an asynchronous continuation (Camunda 7 only)
+* [ ] verify results in XML tab
+
+##### Keep implementation Details (Copy/Paste and Morph)
+
+Based on the [test diagram](./test.bpmn.png):
+
+* [ ] Add Form configuration (FormField + FormData) to "Inspect Invoice" UserTask
+  * [ ] Copy / Paste task; properties are kept
+  * [ ] Change task to ServiceTask; properties are gone from XML
+  * [ ] Undo last step `CTRL + Z`; properties are back
+  * [ ] Redo last step `CTRL + Y`; Task changed to Service Task without form properties
+* [ ] Add Properties, Input/Output Mapping, `asyncBefore`, Retry Time Cycle and implementation to "Check" ServiceTask
+  * [ ] Copy / Paste task; properties are kept
+  * [ ] Change task to Send Task; properties are kept
+  * [ ] Change task to UserTask; implementation property is gone from XML (except Retry Time Cycle, Input/output Mapping and `asyncBefore`)
+
+#### Version chooser
+
+* [ ] I can select the latest (alpha?) version of a diagram
+  * [ ] For Camunda 7, BPMN, validation works
+  * [ ] For Camunda 8, BPMN, validation works
+
+#### Problems panel
+
+* [ ] In a Camunda 8 BPMN the problems panel indicates missing implementation details
+* [ ] In a Camunda 7 BPMN diagram the problems panel indicates missing HTTL (`Process > History time to live`)
+
+#### DMN modeling
+
+* [ ] create a new DMN diagram
+* [ ] build [this diagram](./test.dmn.png) from scratch
+* [ ] morph `Go on Holidays` to a decision table
+* [ ] morph `Which Season` to a decision table
+* [ ] morph `Which Region` to a literal expression
+* [ ] click onto blue overlay on `Go on Holidays` jumps into table editing mode
+* [ ] changing name reflects in DRD
+* [ ] save file on disk as `test.dmn` from table editing mode
+* [ ] save file on disk as `test2.dmn` from diagram mode
+* [ ] both import correctly after save
+* [ ] export DRD as SVG
+* [ ] export DRD as PNG
+* [ ] export DRD as JPG
+* [ ] SVG, PNG and JPG exports open in browser
+
+#### Forms modeling
+
+* [ ] create a new Camunda Form
+* [ ] build [this form](./test.form.png) from scratch
+* [ ] add a regular expression (`^CAM-[0-9]+$`) to the invoice number field
+* [ ] save file on disk as `test.form`
+* [ ] file imports correctly after save
+* [ ] Set the __Execution Platform Version__ to `Camunda 8.2`
+  * [ ] An error is shown: `Expression` is not supported by Camunda Platform 8.2
+  * [ ] Clicking on the error focuses the respective element
+* [ ] Set the __Execution Platform Version__ to `Camunda 8.3` or higher
+  * [ ] No errors are shown
+
+#### RPA Modeling
+
+* [ ] create a new RPA script
+* [ ] edit script content; tab shows dirty state indicator
+* [ ] save file on disk as `test.rpa`
+* [ ] reopen `test.rpa`; content is preserved correctly
+
+##### Edit operations
+
+* [ ] undo (`CTRL + Z`) / redo (`CTRL + Y`) work in editor
+* [ ] cut, copy, paste work
+* [ ] find/replace (`CTRL + H`) opens and functions
+
+##### Linting
+
+* [ ] introduce a syntax error; problems panel shows lint violation
+* [ ] fix error; problems panel clears
+
+##### RPA Worker
+
+> If no worker is running, set one up before testing this section (see [RPA Worker setup](https://docs.camunda.io/docs/components/modeler/desktop-modeler/run-rpa-script/)).
+
+* [ ] status bar shows "RPA Worker not connected" when no worker is running
+* [ ] clicking the status button opens the configuration dialog
+* [ ] after configuring a running worker, status bar shows "RPA Worker connected"
+* [ ] worker config persists after restarting the modeler
+
+##### Test execution
+
+* [ ] "Test RPA script" test tube button is visible in status bar
+* [ ] clicking it opens the test dialog
+* [ ] test output appears in the RPA output panel after run
+
+##### Properties panel
+
+* [ ] properties panel opens via the Settings icon
+* [ ] execution platform version is visible and editable
+
+#### BPMN + Camunda Forms deployment
+
+> __Automated:__ deploying a BPMN file, a form file and a project,
+> and starting an instance from a file and from a project, are
+> covered by the [engine e2e suite](../../test/e2e/README.md#engine-suite-camunda-8-run)
+> (`npm run test:e2e:engine`) against a local Camunda 8 Run cluster. The suite
+> also deploys a DMN file, which this checklist has never covered. Keep testing
+> these manually anyway: the suite runs against a development build, and only
+> against the Local cluster type.
+
+* [ ] Create a simple `Start Event -> User Task -> End Event` process
+* [ ] Create a simple form with id `foo`
+* [ ] Reference the form in the user task via `Camunda Form -> reference=foo`
+* [ ] Verify that deployment of BPMN + Form file works
+
+#### Engine Connection
+
+Test the following scenarios against **all three** cluster types with the engine version matching the modeler release:
+
+* **Local (c8run):** download the c8run version matching the modeler release and start via `./c8run start`
+* **SaaS:** use an internal or trial cluster on [console.camunda.io](https://console.camunda.io)
+* **Self-Managed (SM):** use an internal `dev`/`int` cluster or set up your own locally
+
+To test per cluster type:
+
+* [ ] Create a new project in the folder containing the BPMN and form file
+* [ ] Configure and select the engine connection
+* [ ] Deploy the project (bpmn + form)
+* [ ] Start a process instance, verify link to Operate works
+* [ ] Test the previously created `User Task`
+  * [ ] Select it and start testing
+  * [ ] Open the linked form in Tasklist and complete it
+  * [ ] Verify the task completes successfully
+
+#### File system integration (platform specific)
+
+* [ ] bindings register:
+  * [ ] [Windows](https://github.com/camunda/camunda-modeler/tree/develop/resources/platform/win32/support)
+  * [ ] [Linux](https://github.com/camunda/camunda-modeler/tree/develop/resources/platform/linux/support)
+  * [ ] MacOS - done automatically
+* [ ] external change detection works
+  * [ ] change file in external editor
+  * [ ] focus editor with file open
+  * [ ] message to reload displays
+* [ ] double click in FS opens file in editor (existing instance _?_)
+  * [ ] `.bpmn`
+  * [ ] `.dmn`
+  * [ ] `.form`
+  * [ ] `.rpa`
+
+#### Error Handling
+
+* [ ] Open [`broken.bpmn`](./broken.bpmn) and verify a proper error message is shown (_No diagram to display_)
+
+#### Accessibility
+
+* [ ] No new issues were reported during the tests
+* [ ] The modal opened via "Accessibility violations" button is empty
+
+#### Installers (platform specific)
+
+* [ ] MacOS
+  * [ ] [Downloading archive](https://github.com/camunda/camunda-modeler/releases), extracting and starting application works
+  * [ ] [Downloading DMG](https://github.com/camunda/camunda-modeler/releases), installing and starting it works
+
+#### Other (platform specific)
+
+* [ ] key bindings work (Mac = CMD, CMD+SHIFT+Z, Other = CTRL)
+* [ ] restore workspace on reopen (diagrams, properties panel)
+* [ ] drag and drop
+* [ ] icons are present
+* [ ] OS specific menus are being displayed
+* [ ] menu bar (icons, correctly disabled + enabled)
+* [ ] correct modeler version displayed in about menu
+* [ ] [flags](https://docs.camunda.io/docs/components/modeler/desktop-modeler/flags/) work (e.g., start with `$ ./camunda-modeler --disable-dmn` or provide flag in [`flags.json` file](https://github.com/camunda/camunda-modeler/tree/develop/docs/flags#configure-in-flagsjson) => DMN can be disabled)
+  * Note: On MacOS, you need to `$ cd Camunda\ Modeler.app/Contents/MacOS` first.

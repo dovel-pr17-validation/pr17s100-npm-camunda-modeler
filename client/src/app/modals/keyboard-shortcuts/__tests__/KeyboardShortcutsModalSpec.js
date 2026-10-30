@@ -1,0 +1,117 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import React from 'react';
+
+import { render } from '@testing-library/react';
+
+import { KeyboardShortcutsModal } from '..';
+import View from '../View';
+import getShortcuts from '../getShortcuts';
+
+
+const COMMAND_MODIFIER = 'Command';
+const CTRL_MODIFIER = 'Control';
+
+
+describe('<KeyboardShortcutsModal>', function() {
+
+  describe('keyboard shortcuts', function() {
+
+    it('should render shortcuts', function() {
+
+      // when
+      const { getByText, queryAllByText } = renderOverlay();
+      const groups = getShortcuts('win32');
+
+      // then
+      groups.forEach((group) => {
+        expect(getByText(group.title)).to.exist;
+
+        group.shortcuts.forEach((shortcut) => {
+          expect(getByText(shortcut.label)).to.exist;
+          expect(queryAllByText(shortcut.binding).length).to.be.gt(0);
+        });
+      });
+    });
+
+
+    it('should render Mac OS shortcuts', function() {
+
+      // when
+      const { getByText, queryAllByText } = renderOverlay({
+        platform: 'darwin'
+      });
+
+      // then
+      expect(queryAllByText(COMMAND_MODIFIER, { exact: false }).length).to.be.gt(0);
+
+      // OS-specific bindings
+      expect(getByText('Command + Shift + Z')).to.exist;
+      expect(getByText('Control + Command + F')).to.exist;
+    });
+
+
+    it('should render Windows / Linux shortcuts', function() {
+
+      // when
+      const { getByText, queryAllByText } = renderOverlay({
+        platform: 'linux'
+      });
+
+      // then
+      expect(queryAllByText(CTRL_MODIFIER, { exact: false }).length).to.be.gt(0);
+      expect(queryAllByText(COMMAND_MODIFIER, { exact: false }).length).to.be.equal(0);
+
+      // OS-specific bindings
+      expect(getByText('Control + Y')).to.exist;
+      expect(getByText('F11')).to.exist;
+    });
+
+  });
+
+
+  describe('<View>', function() {
+
+    it('should render', function() {
+      const { container } = render(<View />);
+      expect(container).to.exist;
+    });
+
+  });
+
+});
+
+
+function renderOverlay(options = {}) {
+
+  const platform = options.platform || 'win32';
+
+  return render(<KeyboardShortcutsModal
+    getGlobal={ mockGlobal(platform) }
+  />);
+}
+
+
+function mockGlobal(platform) {
+
+  return function(name) {
+    if (name === 'backend') {
+      return {
+        getPlatform() {
+          return platform;
+        }
+      };
+    }
+
+    throw new Error('global not found: ' + name);
+  };
+}

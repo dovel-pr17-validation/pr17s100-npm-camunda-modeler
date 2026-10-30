@@ -1,0 +1,476 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+import React from 'react';
+
+import { render, waitFor, screen, act } from '@testing-library/react';
+
+import {
+  Cache,
+  WithCachedState
+} from '../../../cached';
+
+import { RPAEditor } from '../RPAEditor';
+
+import { RPACodeEditor as MockRPACodeEditor } from 'test/mocks/rpa';
+
+const RPA = '{"script": "Hello, World!", "executionPlatform": "Camunda Cloud",  "executionPlatformVersion": "8.8.0"}';
+const INVALID_RPA = 'invalid rpa';
+
+
+describe('<RPAEditor>', function() {
+
+  describe('import', function() {
+
+    it('should import with script', async function() {
+
+      // given
+      const onImportSpy = sinon.spy((errors) => {
+        expect(errors).not.to.exist;
+      });
+
+      renderEditor(RPA, {
+        onImport: onImportSpy,
+      });
+
+      await waitFor(() => {
+        expect(onImportSpy).to.have.been.calledOnce;
+        expect(onImportSpy.args[0][0]).not.to.exist;
+      });
+    });
+
+
+    it('should report import errors', async function() {
+
+      // given
+      const onImportSpy = sinon.spy((errors) => {
+        expect(errors).to.exist;
+      });
+
+      // when
+      renderEditor(INVALID_RPA, {
+        onImport: onImportSpy,
+        cache: new Cache()
+      });
+
+      // then
+      await waitFor(() => {
+        expect(onImportSpy).to.have.been.calledOnce;
+        expect(onImportSpy.args[0][0]).to.exist;
+      });
+    });
+
+  });
+
+
+  it('#getXML', function() {
+
+    // given
+    const {
+      instance
+    } = renderEditor(RPA);
+
+    // then
+    expect(instance.getXML()).to.be.equal(RPA);
+  });
+
+
+  describe('#handleChanged', function() {
+
+    it('should be dirty before first save', async function() {
+
+      // given
+      const { instance } = renderEditor(RPA, {
+        cache: new Cache()
+      });
+
+      // then
+      await waitFor(() => {
+        expect(screen.getByText('RPA Script')).to.exist;
+      });
+
+      const dirty = instance.isDirty();
+
+      expect(dirty).to.be.true;
+    });
+
+
+    it('should NOT be dirty after save', async function() {
+
+      // given
+      const { instance } = renderEditor(RPA, {
+        cache: new Cache()
+      });
+
+      // when
+      await waitFor(() => {
+        expect(screen.getByText('RPA Script')).to.exist;
+      });
+
+      await instance.getXML();
+
+      // then
+      await waitFor(() => {
+        const dirty = instance.isDirty();
+        expect(dirty).to.be.false;
+      });
+    });
+
+
+    it('should be dirty after modeling', async function() {
+
+      // given
+      const { instance } = renderEditor(RPA, {
+        cache: new Cache()
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('RPA Script')).to.exist;
+      });
+
+      await instance.getXML();
+
+      // when
+      const { editor } = instance.getCached();
+      act(() => {
+        editor.eventBus.fire('property.change', {
+          key: 'script',
+          value: 'new value'
+        });
+      });
+
+      // then
+      // State update is async
+      await waitFor(() => {
+        const dirty = instance.isDirty();
+        expect(dirty).to.be.true;
+      });
+    });
+
+  });
+
+
+  describe('actions', function() {
+
+    let instance;
+
+    beforeEach(function() {
+      instance = renderEditor(RPA).instance;
+    });
+
+    [ 'undo', 'redo' ].forEach(action => {
+
+      it(`should trigger ${action}`, function() {
+
+        // given
+        const { editor } = instance.getCached();
+
+        const triggerSpy = sinon.spy(editor.editor, 'trigger');
+
+        // when
+        instance.triggerAction(action);
+
+        // then
+        expect(triggerSpy).to.have.been.calledWith('menu', action);
+      });
+
+    });
+
+    [
+      [ 'find', 'actions.find' ],
+      [ 'findNext', 'editor.action.nextMatchFindAction' ],
+      [ 'findPrev', 'editor.action.previousMatchFindAction' ],
+      [ 'replace', 'editor.action.startFindReplaceAction' ]
+    ].forEach(([ action, monacoAction ]) => {
+
+      it(`should map ${action} to monaco action`, function() {
+
+        // given
+        const { editor } = instance.getCached();
+
+        const getActionStub = sinon.stub(editor.editor, 'getAction');
+
+        const runSpy = sinon.spy();
+
+        getActionStub.withArgs(monacoAction).returns({ run: runSpy });
+
+        // when
+        instance.triggerAction(action);
+
+        // then
+        expect(runSpy).to.have.been.calledOnce;
+      });
+
+    });
+
+  });
+
+
+  describe('linting', function() {
+
+    describe('behavior', function() {
+
+      // More time for debounced linting
+      this.timeout(3000);
+
+      it('should lint on import', async function() {
+
+        // given
+        const onActionSpy = sinon.spy();
+        const onImportSpy = sinon.spy();
+
+        // when
+        const { instance } = renderEditor(RPA, {
+          onAction: onActionSpy,
+          onImport: onImportSpy
+        });
+
+        await waitFor(() => {
+          expect(onImportSpy).to.have.been.calledOnce;
+        });
+
+        instance.linting.flush();
+
+        // then
+        const calls = onActionSpy.getCalls()
+          .filter(call => call.args[0] === 'lint-tab');
+
+        expect(calls).to.have.lengthOf(1);
+      });
+
+
+      it('should lint on model.changed', async function() {
+
+        // given
+        const onActionSpy = sinon.spy();
+        const onImportSpy = sinon.spy();
+
+        const { instance } = renderEditor(RPA, {
+          onAction: onActionSpy,
+          onImport: onImportSpy
+        });
+
+        await waitFor(() => {
+          expect(onImportSpy).to.have.been.calledOnce;
+        });
+
+        instance.linting.flush();
+
+        // when
+        const { editor } = instance.getCached();
+
+        act(() => {
+          editor.eventBus.fire('model.changed');
+        });
+
+        instance.linting.flush();
+
+        // then
+        const calls = onActionSpy.getCalls()
+          .filter(call => call.args[0] === 'lint-tab');
+
+        expect(calls).to.have.lengthOf(2);
+      });
+
+
+      it('should unsubscribe on unmount', async function() {
+
+        // given
+        const onActionSpy = sinon.spy();
+        const onImportSpy = sinon.spy();
+
+        const {
+          instance,
+          unmount
+        } = renderEditor(RPA, {
+          onAction: onActionSpy,
+          onImport: onImportSpy
+        });
+
+        await waitFor(() => {
+          expect(onImportSpy).to.have.been.calledOnce;
+        });
+
+        instance.linting.flush();
+
+        const { editor } = instance.getCached();
+
+        // when
+        unmount();
+
+        editor.eventBus.fire('model.changed');
+
+        // then
+        const calls = onActionSpy.getCalls()
+          .filter(call => call.args[0] === 'lint-tab');
+
+        expect(calls).to.have.lengthOf(1);
+      });
+
+
+      it('should NOT break application with linting tab open', async function() {
+
+        // given
+        const props = {
+          layout: {
+            panel: {
+              open: true,
+              tab: 'linting'
+            }
+          }
+        };
+
+        // when
+        try {
+          renderEditor(RPA, props);
+        } catch (error) {
+
+          // then
+          expect(true, 'should not reach error block').to.be.false;
+        }
+      });
+
+    });
+
+  });
+
+
+  describe('engine profile', function() {
+
+    it('should emit tab.engineProfileChanged event on import', async function() {
+
+      // given
+      const emitSpy = sinon.spy();
+
+      // when
+      renderEditor(RPA, {
+        emit: emitSpy
+      });
+
+      // then
+      await waitFor(() => {
+        expect(emitSpy).to.have.been.calledWithMatch('tab.engineProfileChanged', {
+          executionPlatform: 'Camunda Cloud',
+          executionPlatformVersion: '8.8.0'
+        });
+      });
+    });
+
+
+    it('should emit tab.engineProfileChanged event on set engine profile', async function() {
+
+      // given
+      const emitSpy = sinon.spy();
+
+      const { instance } = renderEditor(RPA, {
+        emit: emitSpy
+      });
+
+      emitSpy.resetHistory();
+
+      // when
+      instance.engineProfile.set({
+        executionPlatform: 'Camunda Cloud',
+        executionPlatformVersion: '8.9.0'
+      });
+
+      // then
+      await waitFor(() => {
+        expect(emitSpy).to.have.been.calledWithMatch('tab.engineProfileChanged', {
+          executionPlatform: 'Camunda Cloud',
+          executionPlatformVersion: '8.9.0'
+        });
+      });
+    });
+
+
+    it('should NOT emit tab.engineProfileChanged event when engine profile unchanged', async function() {
+
+      // given
+      const emitSpy = sinon.spy();
+
+      const { instance } = renderEditor(RPA, {
+        emit: emitSpy
+      });
+
+      await waitFor(() => {
+        expect(emitSpy).to.have.been.calledWith('tab.engineProfileChanged');
+      });
+
+      emitSpy.resetHistory();
+
+      // when
+      instance.engineProfile.setCached({
+        executionPlatform: 'Camunda Cloud',
+        executionPlatformVersion: '8.8.0'
+      });
+
+      // then
+      expect(emitSpy).not.to.have.been.calledWith('tab.engineProfileChanged');
+    });
+
+  });
+
+});
+
+// helpers //////////
+
+function noop() {}
+
+const TestEditor = WithCachedState(RPAEditor);
+
+function renderEditor(xml, options = {}) {
+  const {
+    id,
+    onChanged,
+    onImport,
+    ...props
+  } = options;
+
+  let cache = options.cache;
+
+  if (!cache) {
+    cache = new Cache();
+    cache.add('editor', {
+      cached: {
+        editor: new MockRPACodeEditor({ value: xml }),
+        lastXML: xml,
+        editorContainer: document.createElement('div'),
+        propertiesContainer: document.createElement('div')
+      }
+    });
+  }
+
+  const ref = React.createRef();
+
+  const rendered = render(
+    <TestEditor
+      ref={ ref }
+      getConfig={ () => ({}) }
+      onAction={ noop }
+      emit={ noop }
+      onImport={ onImport || noop }
+      id={ id || 'editor' }
+      xml={ xml }
+      activeSheet={ options.activeSheet || { id: 'xml' } }
+      onChanged={ onChanged || noop }
+      layout={ options.layout || {} }
+      cache={ cache }
+      { ...props }
+    />
+  );
+
+  return {
+    ...rendered,
+    instance: ref.current
+  };
+}

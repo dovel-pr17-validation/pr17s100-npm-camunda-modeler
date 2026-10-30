@@ -1,0 +1,466 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+
+import React from 'react';
+
+import {
+  render,
+  fireEvent,
+  waitFor
+} from '@testing-library/react';
+
+import { Overlay } from '..';
+
+
+describe('<Overlay>', function() {
+
+  afterEach(function() {
+    document.querySelectorAll('[data-testid="anchor"]').forEach(anchor => anchor.remove());
+  });
+
+  it('should render', function() {
+    const { overlay } = renderOverlay();
+
+    expect(overlay).to.exist;
+  });
+
+
+  it('should render children', function() {
+    const { getByText } = renderOverlay({
+      children: <>
+        <Overlay.Title><div>{ 'Foo' }</div></Overlay.Title>
+        <Overlay.Body>
+          <div>
+            { 'Test' }
+          </div>
+        </Overlay.Body>
+      </>
+    });
+
+    expect(getByText('Foo')).to.exist;
+    expect(getByText('Test')).to.exist;
+  });
+
+
+  describe('required props', function() {
+
+    // No way to expect component to throw during render without the test failing (@jarekdanielak)
+    it.skip('should require anchor', function() {
+
+      // given
+      const consoleErrorStub = sinon.stub(console, 'error');
+
+      // then
+      expect(() => {
+
+        // when
+        render(<Overlay />);
+      }).to.throw().with.property('message').that.includes('Overlay must receive an `anchor` prop.');
+
+      // cleanup
+      consoleErrorStub.restore();
+    });
+  });
+
+
+  describe('DOM props', function() {
+
+    it('should allow to pass custom class', function() {
+
+      // when
+      const { overlay } = renderOverlay({ className: 'custom' });
+
+      // then
+      expect(overlay.classList.contains('custom')).to.be.true;
+    });
+
+
+    it('should allow to pass custom id', function() {
+
+      // when
+      const { overlay } = renderOverlay({ id: 'custom' });
+
+      // then
+      expect(overlay.id).to.equal('custom');
+    });
+
+
+    it('should NOT set id if not provided', function() {
+
+      // when
+      const { overlay } = renderOverlay();
+
+      // then
+      expect(overlay.id).to.eql('');
+    });
+  });
+
+
+  [
+    'maxHeight',
+    'maxWidth',
+    'minHeight',
+    'minWidth'
+  ].forEach(function(property) {
+
+    const cssProperty = `--overlay-${camelCaseToDash(property)}`;
+
+    describe(`props#${property}`, function() {
+
+      it(`should specify string (${property}="100vh")`, function() {
+
+        // when
+        const { overlay } = renderOverlay({
+          className: 'test',
+          [property]: '100vh'
+        });
+
+        // then
+        expectStyle(overlay, {
+          [cssProperty]: '100vh'
+        });
+
+      });
+
+
+      it(`should specify (pixel) number (${property}=100)`, function() {
+
+        // when
+        const { overlay } = renderOverlay({
+          className: 'test',
+          [property]: 100
+        });
+
+        // then
+        expectStyle(overlay, {
+          [cssProperty]: '100px'
+        });
+
+      });
+
+    });
+
+  });
+
+
+  describe('props#offset', function() {
+
+    it('should use provided offset { left }', async function() {
+
+      // given
+      const offset = {
+        left: 100
+      };
+
+      // when
+      const { overlay, anchor } = renderOverlay({ offset, maxWidth: 100 });
+
+      // then
+      await waitFor(() => {
+        expect(boundingRect(overlay).left).to.be.closeTo(boundingRect(anchor).left + offset.left, 5);
+      });
+    });
+
+
+    it('should use provided offset { right }', async function() {
+
+      // given
+      const offset = {
+        right: 10
+      };
+
+      // when
+      const { overlay, anchor } = renderOverlay({ offset, maxWidth: 100, children: 'Content' });
+
+      // then
+      await waitFor(() => {
+        expect(boundingRect(overlay).right).to.be.closeTo(boundingRect(anchor).right - offset.right, 5);
+      });
+    });
+
+  });
+
+
+  describe('onClose handling', function() {
+
+    let onCloseSpy;
+
+    beforeEach(function() {
+      onCloseSpy = sinon.spy();
+    });
+
+
+    it('should call onClose for background click', async function() {
+
+      // given
+      renderOverlay({ onClose: onCloseSpy });
+
+      await nextTick();
+
+      // when
+      clickOutside(document.body);
+
+      // then
+      expect(onCloseSpy).to.have.been.called;
+    });
+
+
+    it('should NOT call onClose for click inside the overlay', function() {
+
+      // given
+      const { overlay } = renderOverlay({
+        onClose: onCloseSpy,
+        children: <Overlay.Body>
+          <button id="button" />
+        </Overlay.Body>
+      });
+
+      // when
+      const button = overlay.querySelector('#button');
+      fireEvent.click(button);
+
+      // then
+      expect(onCloseSpy).to.not.be.called;
+    });
+
+
+    it('should NOT call onClose for clicking the anchor', async function() {
+
+      // given
+      const { anchor } = renderOverlay({
+        onClose: onCloseSpy,
+        children: <Overlay.Body>
+          <button id="button" />
+        </Overlay.Body>
+      });
+
+      await nextTick();
+
+      // when
+      clickOutside(anchor);
+
+      // then
+      expect(onCloseSpy).to.not.be.called;
+    });
+
+  });
+
+
+  describe('focus handling', function() {
+
+
+    it('should correctly handle autofocus', function() {
+
+      // given
+      const { getByTestId } = renderOverlay({
+        children: <Overlay.Body>
+          <input data-testid="input" autoFocus />
+        </Overlay.Body>
+      });
+
+      const input = getByTestId('input');
+
+      // then
+      expect(document.activeElement).to.eql(input);
+
+    });
+
+  });
+
+
+  describe('enable* props', function() {
+
+    it('should NOT close on Escape when enableEscapeTrap=false', function() {
+
+      // given
+      const onCloseSpy = sinon.spy();
+      renderOverlay({ onClose: onCloseSpy, enableEscapeTrap: false });
+
+      // when
+      fireEvent.keyDown(document, { key: 'Escape' });
+
+      // then
+      expect(onCloseSpy).to.not.have.been.called;
+    });
+
+
+    it('should NOT close on background click when enableGlobalClickTrap=false', async function() {
+
+      // given
+      const onCloseSpy = sinon.spy();
+      renderOverlay({ onClose: onCloseSpy, enableGlobalClickTrap: false });
+
+      await nextTick();
+
+      // when
+      clickOutside(document.body);
+
+      // then
+      expect(onCloseSpy).to.not.have.been.called;
+    });
+
+
+    it('should NOT register keyboard interaction trap when enableKeyboardTrap=false', function() {
+
+      // given
+      const addEventListenerSpy = sinon.spy(window, 'addEventListener');
+
+      // when
+      renderOverlay({ enableKeyboardTrap: false });
+
+      // then
+      try {
+        expect(addEventListenerSpy).to.not.have.been.calledWith('focusin', sinon.match.func);
+      } finally {
+        addEventListenerSpy.restore();
+      }
+    });
+
+  });
+
+
+  describe('<Overlay.Title>', function() {
+
+    it('should render', function() {
+      const { container } = render(<Overlay.Title />);
+
+      expect(container.querySelector('.overlay__title')).to.exist;
+    });
+
+
+    it('should render with custom props', function() {
+
+      // given
+      const onClickSpy = sinon.spy();
+
+      // when
+      const { container } = render(<Overlay.Title className="foo" onClick={ onClickSpy } />);
+
+      const title = container.querySelector('.foo');
+      fireEvent.click(title);
+
+      // then
+      expect(title.classList.contains('foo')).to.be.true;
+      expect(onClickSpy).to.have.been.called;
+    });
+
+  });
+
+
+  describe('<Overlay.Body>', function() {
+
+    it('should render', function() {
+      const { container } = render(<Overlay.Body />);
+
+      expect(container.querySelector('.overlay__body')).to.exist;
+    });
+
+
+    it('should render with custom props', function() {
+
+      // given
+      const onClickSpy = sinon.spy();
+
+      // when
+      const { container } = render(<Overlay.Body className="foo" onClick={ onClickSpy } />);
+
+      const body = container.querySelector('.foo');
+      fireEvent.click(body);
+
+      // then
+      expect(body.classList.contains('foo')).to.be.true;
+      expect(onClickSpy).to.have.been.called;
+    });
+
+  });
+
+
+  describe('<Overlay.Footer>', function() {
+
+    it('should render', function() {
+      const { container } = render(<Overlay.Footer />);
+
+      expect(container.querySelector('.overlay__footer')).to.exist;
+    });
+
+
+    it('should render with custom props', function() {
+
+      // given
+      const onClickSpy = sinon.spy();
+
+      // when
+      const { container } = render(<Overlay.Footer className="foo" onClick={ onClickSpy } />);
+
+      const footer = container.querySelector('.foo');
+      fireEvent.click(footer);
+
+      // then
+      expect(footer.classList.contains('foo')).to.be.true;
+      expect(onClickSpy).to.have.been.called;
+    });
+
+  });
+
+});
+
+
+// helper ///////////////////
+
+function renderOverlay({ children, ...props } = {}) {
+
+  const anchor = document.createElement('button');
+  anchor.setAttribute('data-testid', 'anchor');
+  anchor.style.cssText = 'position: fixed; top: 300px; left: 350px; width: 200px; height: 20px;';
+
+  document.body.appendChild(anchor);
+
+  const rendered = render(<Overlay anchor={ anchor } { ...props }>{ children }</Overlay>);
+
+  const overlay = rendered.getByRole('dialog');
+
+  return {
+    anchor,
+    overlay,
+    ...rendered
+  };
+}
+
+function boundingRect(domNode) {
+  return domNode.getBoundingClientRect();
+}
+
+// the popover listens for outside clicks from the next tick on
+function nextTick() {
+  return new Promise(resolve => setTimeout(resolve));
+}
+
+// the popover dismisses on the click that follows an outside pointerdown
+function clickOutside(target) {
+  fireEvent.pointerDown(target);
+  fireEvent.click(target);
+}
+
+function expectStyle(overlay, expectedStyle) {
+  Object.entries(expectedStyle).forEach(([ key, value ]) => {
+    if (key.startsWith('--')) {
+      expect(overlay.style.getPropertyValue(key)).to.equal(value);
+    } else {
+      expect(overlay.style[key]).to.equal(value);
+    }
+  });
+}
+
+function camelCaseToDash(str) {
+  return str.replace(/([a-zA-Z])(?=[A-Z])/g, '$1-').toLowerCase();
+}

@@ -1,0 +1,378 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import React, { useEffect, useRef, useState } from 'react';
+
+import classNames from 'classnames';
+
+import { Fill } from '../../../app/slot-fill';
+import { Overlay } from '../../../shared/ui';
+
+import ConnectionChecker from '../deployment-plugin/ConnectionChecker';
+import { CONNECTION_MANAGER_PLUGIN_ID, SETTINGS_KEY_CONNECTIONS, initializeSettings } from './ConnectionManagerSettings';
+import { ConnectionManagerOverlay } from './ConnectionManagerOverlay';
+import { StatusIndicator } from '../shared/StatusIndicator';
+import { CONNECTION_CHECK_ERROR_REASONS } from '../deployment-plugin/ConnectionCheckErrors';
+import { NO_CONNECTION_ID } from './constants';
+import { AUTH_TYPES, TARGET_TYPES } from '../../../remote/ZeebeAPI';
+import { generateId } from '../../../util';
+
+import * as css from './ConnectionManagerPlugin.css';
+
+export const NO_CONNECTION = {
+  id: NO_CONNECTION_ID,
+  name: 'No connection'
+};
+
+export const DEFAULT_ENDPOINT = {
+  id: generateId(),
+  name: 'c8run (local)',
+  contactPoint: 'http://localhost:8080/v2',
+  operateUrl: 'http://localhost:8080/operate',
+  tasklistUrl: 'http://localhost:8080/tasklist',
+  targetType: TARGET_TYPES.SELF_HOSTED,
+  authType: AUTH_TYPES.NONE,
+};
+
+/**
+ *
+ * @param {import('../../../app/plugins/CommonPluginProps').CommonPluginProps &
+ * { connectionCheckResult: import('../deployment-plugin/types').ConnectionCheckResult, setConnectionCheckResult: (connectionCheckResult: import('../deployment-plugin/types').ConnectionCheckResult) => void }} props
+ * @returns
+ */
+export default function ConnectionManagerPlugin(props) {
+
+  const {
+    subscribe,
+    settings,
+    triggerAction,
+    emit,
+    _getGlobal,
+    connectionCheckResult,
+    setConnectionCheckResult
+  } = props;
+
+  const [ activeTab, setActiveTab ] = useState(null);
+  const [ overlayOpen, setOverlayOpen ] = useState(false);
+  const [ paused, setPaused ] = useState(false);
+
+  const [ connections, setConnections ] = useState([]);
+  const [ activeConnection, setActiveConnection ] = useState(null);
+
+
+  /**
+   * @type {import('../../../app/zeebe/Deployment').default}
+   */
+  const deployment = _getGlobal('deployment');
+  const globalConnectionChecker = useRef(new ConnectionChecker(_getGlobal('zeebeAPI'), 'plugin'));
+  const settingsConnectionChecker = useRef(new ConnectionChecker(_getGlobal('zeebeAPI'), 'settings'));
+
+  const statusBarButtonRef = useRef(null);
+
+  useEffect(() => {
+    let unsubscribe;
+
+    initializeSettings({
+      settings,
+      connectionChecker: settingsConnectionChecker,
+    }).then(() => {
+      unsubscribe = settings.subscribe(SETTINGS_KEY_CONNECTIONS, (connections) => {
+        setConnections(connections.value);
+      });
+      setConnections(deployment.getEndpoints());
+    });
+
+    return () => {
+      unsubscribe && unsubscribe();
+    };
+  }, [ settings ]);
+
+
+  // close overlay on tab change
+  useEffect(() => {
+    const subscription = subscribe('app.activeTabChanged', ({ activeTab }) => {
+      setActiveTab(activeTab);
+      setOverlayOpen(false);
+    });
+
+    return () => {
+      subscription.cancel();
+    };
+  }, [ subscribe ]);
+
+  // enable external opening
+  useEffect(() => {
+    const subscription = subscribe('app.open-connection-selector', () => {
+      setOverlayOpen(true);
+    });
+
+    return () => {
+      subscription.cancel();
+    };
+  }, [ subscribe ]);
+
+  // handle tab saved event to persist connection
+  useEffect(() => {
+    const subscription = subscribe('tab.saved', ({ tab }) => {
+      deployment.onTabSaved(tab);
+    });
+
+    return () => {
+      subscription.cancel();
+    };
+  }, [ subscribe, deployment ]);
+
+  // pause connection checking when settings are opened
+  useEffect(() => {
+    const subscription = subscribe('app.settings-open', () => {
+      setPaused(true);
+      globalConnectionChecker.current.stopChecking(null);
+    });
+
+    return () => {
+      subscription.cancel();
+    };
+  }, [ subscribe ]);
+
+  useEffect(() => {
+    const subscription = subscribe('settings.closed', () => {
+      if (activeConnection) {
+        setConnectionCheckResult(null);
+        setPaused(false);
+        globalConnectionChecker.current.updateConfig({ endpoint: activeConnection });
+      }
+    });
+    return () => {
+      subscription.cancel();
+    };
+  }, [
+    subscribe,
+    activeConnection,
+    globalConnectionChecker,
+    setConnectionCheckResult,
+  ]);
+
+  // load connection from tab on tab change
+  useEffect(() => {
+    if (!activeTab) {
+      setActiveConnection(null);
+      return;
+    }
+
+    (async () => {
+      const connection = await deployment.getConnectionForTab(activeTab);
+      setActiveConnection(connection);
+    })();
+  }, [ activeTab, deployment, connections ]);
+
+  // update connection checker on connection change
+  useEffect(() => {
+    (async () => {
+      emit('connectionManager.connectionCheckStarted', {
+        connectionId: activeConnection?.id,
+        connection: activeConnection,
+      });
+
+      setConnectionCheckResult(null);
+
+      if (activeConnection && activeConnection.id !== NO_CONNECTION.id && !paused) {
+        globalConnectionChecker.current.updateConfig({ endpoint: activeConnection });
+      }
+      else if (activeConnection) {
+        globalConnectionChecker.current.stopChecking();
+        globalConnectionChecker.current.updateConfig(null, false);
+        setConnectionCheckResult({
+          success: false,
+          reason: CONNECTION_CHECK_ERROR_REASONS.NO_CONFIG,
+        });
+      }
+      else {
+
+        // `activeConnection` is `null` while there is no active tab, or while
+        // the active tab's connection is still being resolved. Neither means
+        // "no connection configured", so we must not report that status - doing
+        // so surfaced a spurious connection error whenever resolving the
+        // connection took longer than `DELAYS.SHORT`.
+        globalConnectionChecker.current.stopChecking();
+      }
+    })();
+
+    // Track the last emitted result (per active connection) so periodic
+    // re-checks that yield an unchanged status don't trigger useless
+    // event emissions and state updates, which cause expensive re-draws
+    // in components relying on the connection status.
+    let lastEmittedResult;
+
+    const connectionCheckListener = (connectionCheckResult) => {
+      if (lastEmittedResult !== undefined
+        && isSameConnectionCheckResult(lastEmittedResult, connectionCheckResult)) {
+        return;
+      }
+
+      lastEmittedResult = connectionCheckResult;
+
+      const endpoint = extractEndpointUrl(activeConnection);
+
+      emit('connectionManager.connectionStatusChanged', {
+        ...connectionCheckResult,
+        connectionId: activeConnection?.id,
+        connection: activeConnection,
+        isLocal: endpoint ? isLocalEndpoint(endpoint) : null
+      });
+      setConnectionCheckResult(connectionCheckResult);
+    };
+
+    if (!paused) {
+      globalConnectionChecker.current.on('connectionCheck', connectionCheckListener);
+    }
+
+    return () => {
+      globalConnectionChecker.current.off('connectionCheck', connectionCheckListener);
+      globalConnectionChecker.current.stopChecking();
+    };
+  }, [ activeConnection, globalConnectionChecker, deployment, setConnectionCheckResult, paused, emit ]);
+
+  function getStatus(connectionCheckResult, activeConnection) {
+    if (activeConnection?.id === NO_CONNECTION.id || paused) {
+      return 'idle';
+    }
+    if (connectionCheckResult) {
+      return connectionCheckResult.success ? 'success' : 'error';
+    }
+    if (activeConnection && activeConnection.id !== NO_CONNECTION.id) {
+      return 'loading';
+    }
+    return 'idle';
+  }
+
+  const statusBarConnectionStatus = getStatus(connectionCheckResult, activeConnection);
+  const statusBarText = activeConnection ? activeConnection.name || 'Unnamed connection' : 'No connection';
+  return <>
+    { tabNeedsConnection(activeTab) &&
+      <Fill name="connection-manager" slot="status-bar__file" group="8_deploy" priority={ 2 }>
+        <button
+          onClick={ () => setOverlayOpen(!overlayOpen) }
+          title="Configure Camunda 8 connection"
+          className={ classNames(css.ConnectionSelector, 'btn', { 'btn--active': overlayOpen }) }
+          ref={ statusBarButtonRef }
+        >
+          <StatusIndicator status={ statusBarConnectionStatus } text={ statusBarText }></StatusIndicator>
+        </button>
+      </Fill>
+    }
+    { overlayOpen && <Overlay className={ css.ConnectionManagerOverlay } onClose={ () => setOverlayOpen(false) } anchor={ statusBarButtonRef.current }>
+      <ConnectionManagerOverlay
+        connections={ connections }
+        connectionCheckResult={ connectionCheckResult }
+        renderHeader="Select Camunda 8 connection"
+        activeConnection={ activeConnection }
+        handleManageConnections={ () => {
+          setOverlayOpen(false);
+          const index = connections.findIndex((conn) => conn.id === activeConnection?.id);
+          triggerAction('settings-open', {
+            scrollToEntry:
+              index >= 0
+                ? `${SETTINGS_KEY_CONNECTIONS}[${index}].name`
+                : CONNECTION_MANAGER_PLUGIN_ID,
+          });
+        } }
+        handleConnectionChange={ async (connection) => {
+          await deployment.setConnectionIdForTab(activeTab, connection.id);
+          setActiveConnection(connection);
+        }
+        }
+      />
+    </Overlay>
+    }
+  </>;
+}
+
+
+
+/**
+ * Checks whether two connection check results are equivalent with respect to
+ * the data consumers actually rely on (`success`, `reason`, and the gateway
+ * `protocol` + `gatewayVersion`). Used to suppress redundant status change
+ * emissions on periodic re-checks.
+ *
+ * @param {Object|null} a
+ * @param {Object|null} b
+ * @returns {boolean}
+ */
+function isSameConnectionCheckResult(a, b) {
+  if (a === b) {
+    return true;
+  }
+
+  if (!a || !b) {
+    return false;
+  }
+
+  return a.success === b.success &&
+    a.reason === b.reason &&
+    a.response?.protocol === b.response?.protocol &&
+    a.response?.gatewayVersion === b.response?.gatewayVersion;
+}
+
+/**
+ * @param {{ type: string; }} tab
+ */
+function tabNeedsConnection(tab) {
+  return tab && [ 'cloud-bpmn', 'cloud-dmn', 'cloud-form', 'rpa' ].includes(tab.type);
+}
+
+/**
+ * Checks if the endpoint is a local address (localhost, 127.0.0.1, etc.).
+ *
+ * @param {string} endpoint - The endpoint URL
+ * @returns {boolean} - True if local, false otherwise
+ */
+function isLocalEndpoint(endpoint) {
+  if (!endpoint) {
+    return false;
+  }
+
+  try {
+    const url = new URL(endpoint);
+    const hostname = url.hostname.toLowerCase();
+
+    return hostname === 'localhost' ||
+           hostname === '127.0.0.1' ||
+           hostname === '0.0.0.0';
+  } catch {
+
+    // Invalid URL
+    return false;
+  }
+}
+
+/**
+ * Extracts the endpoint URL from a connection object.
+ *
+ * @param {Object} connection - The connection configuration object
+ * @returns {string|null} - The endpoint URL or null if not found
+ */
+function extractEndpointUrl(connection) {
+  if (!connection) {
+    return null;
+  }
+
+  // Self-Managed uses contactPoint
+  if (connection.contactPoint) {
+    return connection.contactPoint;
+  }
+
+  // SaaS uses camundaCloudClusterUrl
+  if (connection.camundaCloudClusterUrl) {
+    return connection.camundaCloudClusterUrl;
+  }
+
+  return null;
+}

@@ -1,0 +1,74 @@
+:root {
+  --side-panel-tabs-bar-background-color: var(--neutral-background-subtle);
+}
+
+:local(.SidePanel) {
+  position: relative;
+  flex: none;
+
+  &.open {
+    border-left: 1px solid var(--app-bar-border-color);
+  }
+
+  /* The ResizableContainer wraps children in an absolutely
+     positioned .children div — we need our content to fill it */
+  .children {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .side-panel__tabs {
+    flex: 1;
+    min-height: 0;
+    gap: 0;
+  }
+
+  .side-panel__tabs-bar {
+    flex: none;
+    border-bottom: 1px solid var(--app-bar-border-color);
+    background-color: var(--side-panel-tabs-bar-background-color);
+  }
+
+  .side-panel__body {
+    flex: 1;
+    position: relative;
+    background-color: var(--app-panel-background-color);
+  }
+
+  .side-panel__content {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    overflow-y: auto;
+    display: none;
+
+    &.side-panel__content--active {
+      display: block;
+    }
+  }
+
+  .properties-container {
+    height: 100%;
+  }
+
+  .bio-properties-panel {
+    background: var(--app-panel-background-color);
+  }
+
+  /* This makes the text inside of a tooltip selectable */
+  .bio-properties-panel [role="tooltip"] * {
+    user-select: text;
+  }
+}
+
+:global(.variables-side-panel.open) ~ :local(.SidePanel):not(.open) {
+  .handlebar {
+    display: none;
+  }
+
+  .resizer {
+     pointer-events: none;
+   }
+}

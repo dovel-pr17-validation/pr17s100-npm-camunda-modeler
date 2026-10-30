@@ -1,0 +1,13 @@
+:local(.Notifications) {
+
+  /* keep toasts above the status bar; the design system Toaster has no offset prop */
+  [data-sonner-toaster] {
+    --offset-bottom: 48px !important;
+  }
+
+  /* links passed as plain notification content */
+  [data-description] a[href] {
+    color: var(--link-color);
+    text-decoration: underline;
+  }
+}

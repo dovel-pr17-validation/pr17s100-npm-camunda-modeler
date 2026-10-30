@@ -1,0 +1,212 @@
+/**
+ * Copyright Camunda Services GmbH and/or licensed to Camunda Services GmbH
+ * under one or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.
+ *
+ * Camunda licenses this file to you under the MIT; you may not use this file
+ * except in compliance with the MIT License.
+ */
+
+import { expect } from 'chai';
+import * as sinon from 'sinon';
+
+import React from 'react';
+
+import { render, fireEvent } from '@testing-library/react';
+
+import {
+  SlotFillRoot,
+  Slot
+} from '../../slot-fill';
+
+import PropertiesPanelTabActionItem from '../PropertiesPanelTabActionItem';
+
+const spy = sinon.spy;
+
+
+describe('PropertiesPanelTabActionItem', function() {
+
+  it('should render', function() {
+
+    // when
+    const { container } = renderPropertiesPanelTabActionItem();
+
+    // then
+    expect(container.querySelector('.btn--tab-action')).to.exist;
+  });
+
+
+  describe('toggle', function() {
+
+    it('should be active (open on properties tab)', function() {
+
+      // when
+      const { container } = renderPropertiesPanelTabActionItem({
+        layout: {
+          sidePanel: {
+            open: true,
+            tab: 'properties'
+          }
+        }
+      });
+
+      // then
+      expect(container.querySelector('.btn--tab-action').getAttribute('aria-pressed')).to.equal('true');
+    });
+
+
+    it('should not be active (closed)', function() {
+
+      // when
+      const { container } = renderPropertiesPanelTabActionItem();
+
+      // then
+      expect(container.querySelector('.btn--tab-action').getAttribute('aria-pressed')).to.equal('false');
+    });
+
+
+    it('should not be active (open on different tab)', function() {
+
+      // when
+      const { container } = renderPropertiesPanelTabActionItem({
+        layout: {
+          sidePanel: {
+            open: true,
+            tab: 'test'
+          }
+        }
+      });
+
+      // then
+      expect(container.querySelector('.btn--tab-action').getAttribute('aria-pressed')).to.equal('false');
+    });
+
+
+    it('should call callback on toggle', function() {
+
+      // given
+      const onLayoutChangedSpy = spy();
+
+      const { container } = renderPropertiesPanelTabActionItem({
+        onLayoutChanged: onLayoutChangedSpy
+      });
+
+      // when
+      fireEvent.click(container.querySelector('.btn--tab-action'));
+
+      // then
+      expect(onLayoutChangedSpy).to.have.been.calledOnce;
+    });
+
+
+    it('should open properties tab when panel is closed', function() {
+
+      // given
+      const onLayoutChangedSpy = spy();
+
+      const { container } = renderPropertiesPanelTabActionItem({
+        layout: {
+          sidePanel: {
+            open: false,
+            tab: 'test'
+          }
+        },
+        onLayoutChanged: onLayoutChangedSpy
+      });
+
+      // when
+      fireEvent.click(container.querySelector('.btn--tab-action'));
+
+      // then
+      expect(onLayoutChangedSpy).to.have.been.calledOnce;
+
+      const { sidePanel } = onLayoutChangedSpy.getCall(0).args[0];
+      expect(sidePanel.open).to.be.true;
+      expect(sidePanel.tab).to.equal('properties');
+    });
+
+
+    it('should close panel when already open on properties tab', function() {
+
+      // given
+      const onLayoutChangedSpy = spy();
+
+      const { container } = renderPropertiesPanelTabActionItem({
+        layout: {
+          sidePanel: {
+            open: true,
+            tab: 'properties'
+          }
+        },
+        onLayoutChanged: onLayoutChangedSpy
+      });
+
+      // when
+      fireEvent.click(container.querySelector('.btn--tab-action'));
+
+      // then
+      expect(onLayoutChangedSpy).to.have.been.calledOnce;
+
+      const { sidePanel } = onLayoutChangedSpy.getCall(0).args[0];
+      expect(sidePanel.open).to.be.false;
+      expect(sidePanel.tab).to.equal('properties');
+    });
+
+
+    it('should switch to properties tab when panel is open on different tab', function() {
+
+      // given
+      const onLayoutChangedSpy = spy();
+
+      const { container } = renderPropertiesPanelTabActionItem({
+        layout: {
+          sidePanel: {
+            open: true,
+            tab: 'test'
+          }
+        },
+        onLayoutChanged: onLayoutChangedSpy
+      });
+
+      // when
+      fireEvent.click(container.querySelector('.btn--tab-action'));
+
+      // then
+      expect(onLayoutChangedSpy).to.have.been.calledOnce;
+
+      const { sidePanel } = onLayoutChangedSpy.getCall(0).args[0];
+      expect(sidePanel.open).to.be.true;
+      expect(sidePanel.tab).to.equal('properties');
+    });
+
+  });
+
+});
+
+
+// helpers //////////
+
+const defaultLayout = {
+  sidePanel: {
+    open: false,
+    tab: 'properties'
+  }
+};
+
+
+function renderPropertiesPanelTabActionItem(options = {}) {
+  const {
+    layout = defaultLayout,
+    onLayoutChanged = () => {}
+  } = options;
+
+  return render(
+    <SlotFillRoot>
+      <Slot name="tab-actions" />
+      <PropertiesPanelTabActionItem
+        layout={ layout }
+        onLayoutChanged={ onLayoutChanged } />
+    </SlotFillRoot>
+  );
+}
